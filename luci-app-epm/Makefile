@@ -10,7 +10,7 @@ PKG_LICENSE:=AGPL-3.0-only
 
 LUCI_TITLE:=LuCI eSIM Profile Manager
 LUCI_DESCRIPTION:=LuCI web interface for managing eSIM profiles via lpac
-LUCI_DEPENDS:=+luci-base +lpac +coreutils-timeout +uqmi +mbim-utils
+LUCI_DEPENDS:=+luci-base +lpac +coreutils +coreutils-timeout +uqmi +mbim-utils
 LUCI_PKGARCH:=all
 
 include $(TOPDIR)/feeds/luci/luci.mk
