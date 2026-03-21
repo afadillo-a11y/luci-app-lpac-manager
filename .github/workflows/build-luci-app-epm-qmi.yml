@@ -41,28 +41,49 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y dos2unix curl tar xz-utils jq
+          sudo apt-get install -y dos2unix curl tar xz-utils jq rsync
 
           NFPM_VER="2.43.1"
           curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VER}/nfpm_${NFPM_VER}_Linux_x86_64.tar.gz" | tar -xz
           sudo install -m 0755 nfpm /usr/local/bin/nfpm
 
-      - name: Generate LuCI package files
+      - name: Generate package root from repository tree
         shell: bash
         run: |
           set -euxo pipefail
 
+          APPDIR="${GITHUB_WORKSPACE}/luci-app-epm"
           PKGROOT="${GITHUB_WORKSPACE}/pkgroot"
 
-          mkdir -p \
-            "${PKGROOT}/etc/config" \
-            "${PKGROOT}/usr/lib/lua/luci/controller" \
-            "${PKGROOT}/usr/lib/lua/luci/view/epm" \
-            "${PKGROOT}/www/luci-static/resources/epm/js" \
-            "${PKGROOT}/usr/share/luci/menu.d" \
-            "${PKGROOT}/usr/share/rpcd/acl.d"
+          test -d "${APPDIR}"
+          rm -rf "${PKGROOT}"
+          mkdir -p "${PKGROOT}"
 
-          cat > "${PKGROOT}/etc/config/epm" <<'EOF'
+          # 1) Copy LuCI Lua sources wholesale
+          mkdir -p "${PKGROOT}/usr/lib/lua/luci"
+          rsync -a "${APPDIR}/luasrc/" "${PKGROOT}/usr/lib/lua/luci/"
+
+          # 2) Copy static resources wholesale
+          mkdir -p "${PKGROOT}/www/luci-static/resources"
+          rsync -a "${APPDIR}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
+
+          # 3) Copy root payload wholesale if present
+          if [ -d "${APPDIR}/root" ]; then
+            rsync -a "${APPDIR}/root/" "${PKGROOT}/"
+          fi
+
+          # 4) Normalize LuCI menu path:
+          # repo may currently use root/usr/share/menu.d, but runtime path should be /usr/share/luci/menu.d
+          mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
+          if [ -d "${PKGROOT}/usr/share/menu.d" ]; then
+            rsync -a "${PKGROOT}/usr/share/menu.d/" "${PKGROOT}/usr/share/luci/menu.d/"
+            rm -rf "${PKGROOT}/usr/share/menu.d"
+          fi
+
+          # 5) Ensure config exists
+          mkdir -p "${PKGROOT}/etc/config"
+          if [ ! -f "${PKGROOT}/etc/config/epm" ]; then
+            cat > "${PKGROOT}/etc/config/epm" <<'EOF'
           config epm 'config'
               option apdu_backend 'qmi'
               option http_backend 'curl'
@@ -80,34 +101,12 @@ jobs:
               option reboot_custom_command 'echo "Custom reboot command here"'
               option json_output '0'
           EOF
+          fi
 
-          # These files are expected to exist in your repo already.
-          install -m 0644 ./luci-app-epm/luasrc/controller/epm.lua \
-            "${PKGROOT}/usr/lib/lua/luci/controller/epm.lua"
-
-          install -m 0644 ./luci-app-epm/luasrc/view/epm/config.htm \
-            "${PKGROOT}/usr/lib/lua/luci/view/epm/config.htm"
-
-          install -m 0644 ./luci-app-epm/htdocs/luci-static/resources/epm/js/epm-config.js \
-            "${PKGROOT}/www/luci-static/resources/epm/js/epm-config.js"
-
-          cat > "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm-qmi.json" <<'EOF'
-          {
-            "admin/modem/epm": {
-              "title": "eSIM Profile Manager (QMI)",
-              "order": 60,
-              "action": {
-                "type": "template",
-                "path": "epm/config"
-              },
-              "depends": {
-                "acl": [ "luci-app-epm-qmi" ]
-              }
-            }
-          }
-          EOF
-
-          cat > "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json" <<'EOF'
+          # 6) Ensure ACL exists
+          mkdir -p "${PKGROOT}/usr/share/rpcd/acl.d"
+          if [ ! -f "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json" ]; then
+            cat > "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json" <<'EOF'
           {
             "luci-app-epm-qmi": {
               "description": "Grant access to eSIM Profile Manager QMI/AT frontend for lpac 2.3.0",
@@ -125,14 +124,22 @@ jobs:
             }
           }
           EOF
+          fi
 
-          dos2unix \
-            "${PKGROOT}/etc/config/epm" \
-            "${PKGROOT}/usr/lib/lua/luci/controller/epm.lua" \
-            "${PKGROOT}/usr/lib/lua/luci/view/epm/config.htm" \
-            "${PKGROOT}/www/luci-static/resources/epm/js/epm-config.js" \
-            "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm-qmi.json" \
-            "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json"
+          # 7) If legacy menu file exists, adjust ACL dependency on the fly
+          if [ -f "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm.json" ]; then
+            sed -i 's/"luci-app-epm"/"luci-app-epm-qmi"/g' "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm.json"
+            sed -i 's/"eSIM Profile Manager"/"eSIM Profile Manager (QMI)"/g' "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm.json" || true
+          fi
+
+          # 8) Normalize line endings for text assets
+          find "${PKGROOT}" -type f \( \
+            -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' -o -name '*.html' -o \
+            -name '*.css' -o -path '*/etc/config/*' -o -name '*.sh' \
+          \) -print0 | xargs -0 -r dos2unix
+
+          # 9) Show resulting tree for debugging
+          find "${PKGROOT}" -maxdepth 5 -type f | sort
 
       - name: Build IPK and APK packages with nFPM
         shell: bash
@@ -152,10 +159,10 @@ jobs:
           echo "This is the QMI/AT LuCI frontend for lpac 2.3.0."
           echo "The lpac backend is NOT bundled in this package."
           echo
-          echo "Install the matching backend package separately."
-          echo "Examples on OpenWrt:"
+          echo "Install the matching backend separately."
+          echo "Examples:"
           echo "  opkg install lpac libqmi glib2 libcurl"
-          echo "or on APK-based systems:"
+          echo "or"
           echo "  apk add lpac libqmi glib2 libcurl"
           echo
           echo "Then reopen LuCI."
@@ -188,7 +195,7 @@ jobs:
 
           chmod 755 postinst.sh prerm.sh postrm.sh
 
-          export PKG_DESC="LuCI frontend for lpac 2.3.0 using QMI with AT fallback on OpenWrt. Package name is separated as luci-app-epm-qmi to distinguish it from older uqmi/mbim-oriented variants."
+          export PKG_DESC="LuCI frontend for lpac 2.3.0 using native QMI with AT fallback on OpenWrt. This package is named luci-app-epm-qmi to distinguish it from older uqmi/mbim-oriented variants."
 
           export SOURCE_DATE_EPOCH=1704067200
           for ARCH in "${ARCHS[@]}"; do
@@ -201,14 +208,11 @@ jobs:
           description: "${PKG_DESC}"
           homepage: https://github.com/estkme-group/lpac
           contents:
-            - src: ./pkgroot/usr/lib/lua/luci/controller/
-              dst: /usr/lib/lua/luci/controller
+            - src: ./pkgroot/usr/lib/lua/luci/
+              dst: /usr/lib/lua/luci
               type: tree
-            - src: ./pkgroot/usr/lib/lua/luci/view/epm/
-              dst: /usr/lib/lua/luci/view/epm
-              type: tree
-            - src: ./pkgroot/www/luci-static/resources/epm/js/
-              dst: /www/luci-static/resources/epm/js
+            - src: ./pkgroot/www/luci-static/resources/
+              dst: /www/luci-static/resources
               type: tree
             - src: ./pkgroot/usr/share/luci/menu.d/
               dst: /usr/share/luci/menu.d
@@ -241,14 +245,11 @@ jobs:
           description: "${PKG_DESC}"
           homepage: https://github.com/estkme-group/lpac
           contents:
-            - src: ./pkgroot/usr/lib/lua/luci/controller/
-              dst: /usr/lib/lua/luci/controller
+            - src: ./pkgroot/usr/lib/lua/luci/
+              dst: /usr/lib/lua/luci
               type: tree
-            - src: ./pkgroot/usr/lib/lua/luci/view/epm/
-              dst: /usr/lib/lua/luci/view/epm
-              type: tree
-            - src: ./pkgroot/www/luci-static/resources/epm/js/
-              dst: /www/luci-static/resources/epm/js
+            - src: ./pkgroot/www/luci-static/resources/
+              dst: /www/luci-static/resources
               type: tree
             - src: ./pkgroot/usr/share/luci/menu.d/
               dst: /usr/share/luci/menu.d
