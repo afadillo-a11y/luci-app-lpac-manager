@@ -1,0 +1,27 @@
+{
+  "admin/modem": {
+    "title": "Modem",
+    "order": 55,
+    "action": {
+      "type": "firstchild",
+      "recurse": true
+    },
+    "depends": {
+      "acl": [ "luci-app-epm-qmi" ]
+    }
+  },
+  "admin/modem/epm": {
+    "title": "eSIM Profile Manager (QMI)",
+    "order": 60,
+    "action": {
+      "type": "cbi",
+      "path": "epm",
+      "post": {
+        "cbi.submit": true
+      }
+    },
+    "depends": {
+      "acl": [ "luci-app-epm-qmi" ]
+    }
+  }
+}
