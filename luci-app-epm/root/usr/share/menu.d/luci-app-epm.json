@@ -3,11 +3,8 @@
     "title": "eSIM Profile Manager (QMI)",
     "order": 60,
     "action": {
-      "type": "cbi",
-      "path": "epm",
-      "post": {
-        "cbi.submit": true
-      }
+      "type": "view",
+      "path": "epm/config"
     },
     "depends": {
       "acl": [ "luci-app-epm-qmi" ]
