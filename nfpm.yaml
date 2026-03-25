@@ -1,40 +1,45 @@
 # ==============================================================================
-# nFPM Build Configuration — luci-app-lpac-esim
+# nFPM Build Configuration — luci-app-lpac-esim v1.2.1
 # LuCI WebUI for eSIM profile management on OpenWrt.
 # Architecture: noarch / all — pure Lua + HTML + JS, no compilation needed.
+#
+# NOTE: This nfpm.yaml works with pkgroot/ assembled by the workflow.
+# Do NOT run nfpm directly without building pkgroot first.
 # ==============================================================================
 name: "luci-app-lpac-esim"
+arch: "all"
 platform: "linux"
-version: "1.0.0"
+version: "${PKG_VER}"
 section: "luci"
 maintainer: "Medvedolog <Medvedolog@github.com>"
+homepage: "https://github.com/Medvedolog/lpac-esim-openwrt"
 description: |
   LuCI WebUI for eSIM profile management on OpenWrt.
   Provides web interface for lpac-esim-qmi backend script.
-  Supports QMI and AT backends. MBIM pending lpac recompilation.
-  Features: profile list/switch, modem reboot, chip info,
-  notification management, UCI-based configuration.
+  Supports QMI, AT, and MBIM backends.
+  Features: profile list/switch/download/delete/rename, modem reboot,
+  chip info, notification management, UCI-based configuration.
 depends:
-  - libc
   - luci-base
   - lpac-esim-qmi
-  - jq
 contents:
-  # Lua controller and views
-  - src: ./src/usr
-    dst: /usr
-
-  # Static web resources (JS, CSS)
-  - src: ./htdocs
-    dst: /www
-
-  # UCI default config
-  - src: ./etc
-    dst: /etc
-
-  # ACL and menu registration
-  - src: ./root/usr
-    dst: /usr
+  - src: ./pkgroot/usr/lib/lua/luci/
+    dst: /usr/lib/lua/luci
+    type: tree
+  - src: ./pkgroot/www/luci-static/resources/
+    dst: /www/luci-static/resources
+    type: tree
+  - src: ./pkgroot/usr/share/luci/menu.d/
+    dst: /usr/share/luci/menu.d
+    type: tree
+  - src: ./pkgroot/usr/share/rpcd/acl.d/
+    dst: /usr/share/rpcd/acl.d
+    type: tree
+  - src: ./pkgroot/etc/config/lpac-esim
+    dst: /etc/config/lpac-esim
+    type: "config|noreplace"
+    file_info:
+      mode: 0644
 scripts:
   postinstall: ./scripts/postinst
   preremove: ./scripts/prerm

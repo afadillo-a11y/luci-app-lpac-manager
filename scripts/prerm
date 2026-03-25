@@ -1,6 +1,11 @@
 #!/bin/sh
-# prerm — luci-app-lpac-esim
-# Clear LuCI cache
-rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* 2>/dev/null
+set +e
+
+rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* >/dev/null 2>&1 || true
+
+if [ -x /etc/init.d/rpcd ]; then
+    /etc/init.d/rpcd reload >/dev/null 2>&1 || true
+fi
+
 logger -t lpac-esim "LuCI app removed."
 exit 0
