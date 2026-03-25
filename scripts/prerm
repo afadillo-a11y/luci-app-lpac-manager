@@ -1,0 +1,6 @@
+#!/bin/sh
+# prerm — luci-app-lpac-esim
+# Clear LuCI cache
+rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* 2>/dev/null
+logger -t lpac-esim "LuCI app removed."
+exit 0

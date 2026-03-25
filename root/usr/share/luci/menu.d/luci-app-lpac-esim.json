@@ -1,0 +1,13 @@
+{
+  "admin/modem/lpac-esim": {
+    "title": "eSIM Manager",
+    "order": 60,
+    "action": {
+      "type": "template",
+      "path": "lpac_esim/main"
+    },
+    "depends": {
+      "acl": ["luci-app-lpac-esim"]
+    }
+  }
+}

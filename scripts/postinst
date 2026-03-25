@@ -1,0 +1,10 @@
+#!/bin/sh
+# postinst — luci-app-lpac-esim
+# Ensure UCI config exists with defaults
+if [ ! -f /etc/config/lpac-esim ]; then
+    cp /etc/config/lpac-esim.default /etc/config/lpac-esim 2>/dev/null || true
+fi
+# Clear LuCI cache so new pages are picked up immediately
+rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* 2>/dev/null
+logger -t lpac-esim "LuCI app installed. Navigate to Modem → eSIM Manager."
+exit 0

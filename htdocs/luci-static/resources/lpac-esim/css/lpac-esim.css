@@ -1,0 +1,135 @@
+/* lpac-esim.css — Styles for eSIM Manager LuCI app */
+
+/* ===== Tab styling ===== */
+.cbi-tabcontent {
+    display: none;
+}
+.cbi-tabcontent-active,
+.cbi-tabcontent.cbi-tabcontent-active {
+    display: block !important;
+}
+.cbi-tabmenu ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 15px 0;
+    display: flex;
+    flex-wrap: wrap;
+    border-bottom: 2px solid #ddd;
+}
+.cbi-tabmenu li {
+    margin: 0;
+}
+.cbi-tabmenu li a {
+    display: block;
+    padding: 8px 16px;
+    text-decoration: none;
+    color: #555;
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -2px;
+    border-radius: 4px 4px 0 0;
+    transition: background 0.2s, color 0.2s;
+}
+.cbi-tabmenu li a:hover {
+    background: #f5f5f5;
+    color: #333;
+}
+.cbi-tabmenu li.cbi-tab-active a {
+    background: #fff;
+    color: #0078d4;
+    border-color: #ddd;
+    border-bottom-color: #fff;
+    font-weight: bold;
+}
+
+/* ===== Profile status badges ===== */
+.esim-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: bold;
+    text-transform: capitalize;
+}
+.esim-badge-enabled {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+.esim-badge-disabled {
+    background: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+/* ===== Table responsive ===== */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.cbi-section-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.cbi-section-table th,
+.cbi-section-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+.cbi-section-table thead th {
+    background: #f8f9fa;
+    font-weight: bold;
+    border-bottom: 2px solid #dee2e6;
+}
+.cbi-section-table tr:hover {
+    background: #f5f8ff;
+}
+
+/* ===== Button spacing in action columns ===== */
+.cbi-page-custom-actions {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+}
+.cbi-page-custom-actions .cbi-button {
+    margin-right: 8px;
+}
+
+/* ===== Fieldset sections ===== */
+fieldset.cbi-section {
+    margin-bottom: 20px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+}
+fieldset.cbi-section legend {
+    font-weight: bold;
+    font-size: 1.05em;
+    padding: 0 8px;
+}
+
+/* ===== Config form ===== */
+.cbi-value {
+    margin-bottom: 12px;
+}
+.cbi-value-title {
+    display: inline-block;
+    min-width: 180px;
+    font-weight: bold;
+    vertical-align: top;
+    padding-top: 6px;
+}
+.cbi-value-field {
+    display: inline-block;
+}
+.cbi-value-description {
+    font-size: 0.85em;
+    color: #888;
+    margin-top: 3px;
+}
+.cbi-input-text,
+.cbi-input-select {
+    min-width: 250px;
+}

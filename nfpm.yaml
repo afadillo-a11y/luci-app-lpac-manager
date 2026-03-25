@@ -1,0 +1,44 @@
+# ==============================================================================
+# nFPM Build Configuration — luci-app-lpac-esim
+# LuCI WebUI for eSIM profile management on OpenWrt.
+# Architecture: noarch / all — pure Lua + HTML + JS, no compilation needed.
+# ==============================================================================
+name: "luci-app-lpac-esim"
+platform: "linux"
+version: "1.0.0"
+section: "luci"
+maintainer: "Medvedolog <Medvedolog@github.com>"
+description: |
+  LuCI WebUI for eSIM profile management on OpenWrt.
+  Provides web interface for lpac-esim-qmi backend script.
+  Supports QMI and AT backends. MBIM pending lpac recompilation.
+  Features: profile list/switch, modem reboot, chip info,
+  notification management, UCI-based configuration.
+depends:
+  - libc
+  - luci-base
+  - lpac-esim-qmi
+  - jq
+contents:
+  # Lua controller and views
+  - src: ./src/usr
+    dst: /usr
+
+  # Static web resources (JS, CSS)
+  - src: ./htdocs
+    dst: /www
+
+  # UCI default config
+  - src: ./etc
+    dst: /etc
+
+  # ACL and menu registration
+  - src: ./root/usr
+    dst: /usr
+scripts:
+  postinstall: ./scripts/postinst
+  preremove: ./scripts/prerm
+apk:
+  arch: "noarch"
+ipk:
+  arch: "all"
