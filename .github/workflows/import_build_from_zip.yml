@@ -1,4 +1,4 @@
-name: import-build-from-zip
+name: import-from-zip
 
 on:
   workflow_dispatch:
@@ -7,26 +7,32 @@ on:
         description: "Путь к zip внутри репозитория"
         required: true
         default: "_incoming/luci-app-lpac-esim-v1.2.1.zip"
-      commit_changes:
-        description: "Закоммитить разложенные файлы в репозиторий"
+      commit_message:
+        description: "Текст коммита"
         required: true
-        default: "true"
+        default: "Import files from ZIP"
+      source_root:
+        description: "Корневая папка внутри zip"
+        required: true
+        default: "luci-app-lpac-esim"
 
 permissions:
   contents: write
 
 jobs:
-  import-build:
+  import:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate zip exists
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           test -f "${{ inputs.zip_path }}"
 
       - name: Unpack zip
@@ -37,72 +43,120 @@ jobs:
           mkdir -p _workzip
           unzip -q "${{ inputs.zip_path }}" -d _workzip
 
-      - name: Import files from zip into repo tree
+      - name: Detect source root
+        id: detect
         shell: bash
         run: |
           set -euo pipefail
 
-          SRC="_workzip/luci-app-lpac-esim"
-          test -d "$SRC"
+          if [ -d "_workzip/${{ inputs.source_root }}" ]; then
+            echo "src=_workzip/${{ inputs.source_root }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          # Чистим только те каталоги, которые реально импортируем,
-          # чтобы не тянуть за собой старые хвосты
-          rm -rf htdocs luasrc root/etc/config root/usr/share/luci/menu.d root/usr/share/rpcd/acl.d scripts
-          mkdir -p htdocs luasrc root/etc/config root/usr/share/luci/menu.d root/usr/share/rpcd/acl.d scripts
+          first_dir="$(find _workzip -mindepth 1 -maxdepth 1 -type d | head -n 1 || true)"
+          if [ -n "$first_dir" ]; then
+            echo "src=$first_dir" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          # Копируем как есть из zip
-          cp -a "$SRC/htdocs/." htdocs/
-          cp -a "$SRC/src/usr/lib/lua/luci/." luasrc/
-          cp -a "$SRC/root/usr/share/luci/menu.d/." root/usr/share/luci/menu.d/
-          cp -a "$SRC/root/usr/share/rpcd/acl.d/." root/usr/share/rpcd/acl.d/
-          cp -a "$SRC/etc/config/." root/etc/config/
-          cp -a "$SRC/scripts/." scripts/
-          cp -a "$SRC/nfpm.yaml" nfpm.yaml
+          echo "Cannot detect source root inside zip"
+          exit 1
 
-          # Если хотите хранить backend в репо тоже под root/usr/bin
-          mkdir -p root/usr/bin
-          cp -a "$SRC/src/usr/bin/." root/usr/bin/
-
-          # Нормализация прав
-          chmod +x root/usr/bin/* || true
-          chmod +x scripts/* || true
-
-      - name: Commit imported changes
-        if: ${{ inputs.commit_changes == 'true' }}
+      - name: Show detected source tree
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          echo "Detected source: ${{ steps.detect.outputs.src }}"
+          find "${{ steps.detect.outputs.src }}" -maxdepth 3 -type f | sort | sed -n '1,200p'
+
+      - name: Import files into repository layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SRC="${{ steps.detect.outputs.src }}"
+
+          # Проверка ожидаемых каталогов
+          test -d "$SRC/htdocs"
+          test -d "$SRC/src/usr/lib/lua/luci"
+          test -d "$SRC/etc/config"
+          test -f "$SRC/nfpm.yaml"
+
+          # Чистим только импортируемые части дерева
+          rm -rf htdocs
+          rm -rf luasrc
+          rm -rf root/etc/config
+          rm -rf root/usr/share/luci/menu.d
+          rm -rf root/usr/share/rpcd/acl.d
+          rm -rf root/usr/bin
+          rm -rf scripts
+
+          # Создаём целевые каталоги
+          mkdir -p htdocs
+          mkdir -p luasrc
+          mkdir -p root/etc/config
+          mkdir -p root/usr/share/luci/menu.d
+          mkdir -p root/usr/share/rpcd/acl.d
+          mkdir -p root/usr/bin
+          mkdir -p scripts
+
+          # Копируем web-статику
+          cp -a "$SRC/htdocs/." htdocs/
+
+          # Копируем luci lua tree
+          cp -a "$SRC/src/usr/lib/lua/luci/." luasrc/
+
+          # Копируем конфиг
+          cp -a "$SRC/etc/config/." root/etc/config/
+
+          # Копируем menu.d и acl.d если есть
+          if [ -d "$SRC/root/usr/share/luci/menu.d" ]; then
+            cp -a "$SRC/root/usr/share/luci/menu.d/." root/usr/share/luci/menu.d/
+          fi
+
+          if [ -d "$SRC/root/usr/share/rpcd/acl.d" ]; then
+            cp -a "$SRC/root/usr/share/rpcd/acl.d/." root/usr/share/rpcd/acl.d/
+          fi
+
+          # Копируем backend/bin если есть
+          if [ -d "$SRC/src/usr/bin" ]; then
+            cp -a "$SRC/src/usr/bin/." root/usr/bin/
+          fi
+
+          # Копируем scripts если есть
+          if [ -d "$SRC/scripts" ]; then
+            cp -a "$SRC/scripts/." scripts/
+          fi
+
+          # Обновляем nfpm-конфиг
+          cp -a "$SRC/nfpm.yaml" nfpm.yaml
+
+          # Нормализуем права
+          find root/usr/bin -type f -exec chmod +x {} \; 2>/dev/null || true
+          find scripts -type f -exec chmod +x {} \; 2>/dev/null || true
+
+      - name: Show git diff summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git diff --stat
+
+      - name: Commit and push changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add htdocs luasrc root scripts nfpm.yaml
+
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
 
-          git commit -m "Import build from ZIP: ${{ inputs.zip_path }}"
+          git commit -m "${{ inputs.commit_message }}"
           git push
-
-      - name: Set up nfpm
-        uses: goreleaser/nfpm-action@v1
-        with:
-          version: latest
-
-      - name: Build IPK
-        shell: bash
-        run: |
-          mkdir -p dist/ipk
-          nfpm package --packager ipk --config nfpm.yaml --target dist/ipk/
-
-      - name: Build APK
-        shell: bash
-        run: |
-          mkdir -p dist/apk
-          nfpm package --packager apk --config nfpm.yaml --target dist/apk/
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: built-packages
-          path: dist/
