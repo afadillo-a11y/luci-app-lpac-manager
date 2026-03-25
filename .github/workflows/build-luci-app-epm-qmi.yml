@@ -1,15 +1,15 @@
-name: Build and Release LuCI App EPM QMI for lpac 2.3.0
+name: Build and Release luci-app-lpac-esim
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'luci-v*'
   workflow_dispatch:
     inputs:
       build_target:
-        description: 'Enter package version (e.g. 2.3.0-1) or branch label'
+        description: 'Package version (e.g. 1.2.1)'
         required: true
-        default: '2.3.0-1'
+        default: '1.2.1'
 
 jobs:
   release:
@@ -18,8 +18,9 @@ jobs:
     permissions:
       contents: write
     env:
-      PKG_NAME: luci-app-epm-qmi
-      APP_DIR: luci-app-epm
+      PKG_NAME: luci-app-lpac-esim
+      # Source directories (relative to repo root, inside luci-app/)
+      SRC_DIR: luci-app
 
     steps:
       - name: Extract version
@@ -28,293 +29,155 @@ jobs:
           set -euxo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "VERSION=${{ github.event.inputs.build_target }}" >> "$GITHUB_ENV"
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+          elif [[ "${GITHUB_REF}" == refs/tags/luci-v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/luci-v}" >> "$GITHUB_ENV"
           else
             echo "VERSION=nightly" >> "$GITHUB_ENV"
           fi
 
-      - name: Checkout local repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install nFPM and helpers
         shell: bash
         run: |
           set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y dos2unix curl tar xz-utils jq rsync
+          sudo apt-get update -qq
+          sudo apt-get install -y dos2unix curl tar jq rsync
 
-          NFPM_VER="2.43.1"
-          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VER}/nfpm_${NFPM_VER}_Linux_x86_64.tar.gz" | tar -xz
+          NFPM_TAG=$(curl -sL https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r .tag_name)
+          NFPM_VER=${NFPM_TAG#v}
+          echo "Installing nFPM ${NFPM_VER}"
+          curl -fsSL \
+            "https://github.com/goreleaser/nfpm/releases/download/${NFPM_TAG}/nfpm_${NFPM_VER}_Linux_x86_64.tar.gz" \
+            | tar -xz nfpm
           sudo install -m 0755 nfpm /usr/local/bin/nfpm
+          nfpm --version
 
-      - name: Generate package root from repository tree
+      - name: Assemble pkgroot from source tree
         shell: bash
         run: |
           set -euxo pipefail
 
-          APPDIR="${GITHUB_WORKSPACE}/${APP_DIR}"
-          PKGROOT="${GITHUB_WORKSPACE}/pkgroot"
+          SRCDIR="${GITHUB_WORKSPACE}/${SRC_DIR}"
+          PKGROOT="${GITHUB_WORKSPACE}/${SRC_DIR}/pkgroot"
 
-          test -d "${APPDIR}"
+          test -d "${SRCDIR}"
           rm -rf "${PKGROOT}"
           mkdir -p "${PKGROOT}"
 
-          # 1) Copy LuCI Lua sources wholesale
-          if [ -d "${APPDIR}/luasrc" ]; then
+          # 1) Lua controller + views
+          if [ -d "${SRCDIR}/src/usr/lib/lua/luci" ]; then
             mkdir -p "${PKGROOT}/usr/lib/lua/luci"
-            rsync -a "${APPDIR}/luasrc/" "${PKGROOT}/usr/lib/lua/luci/"
+            rsync -a "${SRCDIR}/src/usr/lib/lua/luci/" "${PKGROOT}/usr/lib/lua/luci/"
           fi
 
-          # 2) Copy static resources wholesale
-          if [ -d "${APPDIR}/htdocs/luci-static/resources" ]; then
+          # 2) Static web resources (JS, CSS)
+          if [ -d "${SRCDIR}/htdocs/luci-static/resources" ]; then
             mkdir -p "${PKGROOT}/www/luci-static/resources"
-            rsync -a "${APPDIR}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
+            rsync -a "${SRCDIR}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
           fi
 
-          # 3) Copy root payload wholesale if present
-          if [ -d "${APPDIR}/root" ]; then
-            rsync -a "${APPDIR}/root/" "${PKGROOT}/"
+          # 3) ACL + menu.d from root/
+          if [ -d "${SRCDIR}/root" ]; then
+            rsync -a "${SRCDIR}/root/" "${PKGROOT}/"
           fi
 
-          # 4) Normalize LuCI menu path:
-          # legacy repos may still use root/usr/share/menu.d
+          # 4) Normalize menu path: ensure under luci/menu.d
           mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
           if [ -d "${PKGROOT}/usr/share/menu.d" ]; then
             rsync -a "${PKGROOT}/usr/share/menu.d/" "${PKGROOT}/usr/share/luci/menu.d/"
             rm -rf "${PKGROOT}/usr/share/menu.d"
           fi
 
-          # 5) Ensure default UCI config exists
+          # 5) UCI default config
           mkdir -p "${PKGROOT}/etc/config"
-          if [ ! -f "${PKGROOT}/etc/config/epm" ]; then
-            cat > "${PKGROOT}/etc/config/epm" <<'EOF'
-          config epm 'epm'
-          	option apdu_backend 'qmi'
-          	option http_backend 'curl'
-          	option qmi_device '/dev/cdc-wdm0'
-          	option at_device '/dev/ttyUSB3'
-          	option qmi_sim_slot '1'
-          	option mbim_proxy '0'
-          	option mbim_device '/dev/cdc-wdm0'
-          	option reboot_method 'qmi'
-          	option reboot_qmi_slot '1'
-          	option reboot_custom_command 'echo "Custom reboot command here"'
-          	option reboot_mbim_device '/dev/cdc-wdm0'
-          	option reboot_at_command 'AT+CFUN=1,1'
-          	option reboot_qmi_device '/dev/cdc-wdm0'
-          	option reboot_at_device '/dev/ttyUSB3'
-          	option json_output '0'
-          EOF
+          if [ -f "${SRCDIR}/etc/config/lpac-esim" ]; then
+            cp "${SRCDIR}/etc/config/lpac-esim" "${PKGROOT}/etc/config/lpac-esim"
           fi
 
-          # 6) Ensure ACL exists; preserve repo variant if already present
-          mkdir -p "${PKGROOT}/usr/share/rpcd/acl.d"
-          if [ ! -f "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json" ]; then
-            cat > "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json" <<'EOF'
-          {
-            "luci-app-epm-qmi": {
-              "description": "Grant access to eSIM Profile Manager QMI/AT frontend for lpac 2.3.0",
-              "read": {
-                "uci": [ "epm" ],
-                "file": {
-                  "/usr/bin/lpac": [ "exec" ],
-                  "/usr/sbin/qmicli": [ "exec" ],
-                  "/sbin/logread": [ "exec" ]
-                }
-              },
-              "write": {
-                "uci": [ "epm" ]
-              }
-            }
-          }
-          EOF
-          fi
-
-          # 7) Force final menu JSON for modem node + CBI compatibility
-          mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
-          rm -f "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm.json"
-          cat > "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm-qmi.json" <<'EOF'
-          {
-            "admin/modem": {
-              "title": "Modem",
-              "order": 55,
-              "action": {
-                "type": "firstchild",
-                "recurse": true
-              },
-              "depends": {
-                "acl": [ "luci-app-epm-qmi" ]
-              }
-            },
-            "admin/modem/epm": {
-              "title": "eSIM Profile Manager (QMI)",
-              "order": 60,
-              "action": {
-                "type": "cbi",
-                "path": "epm",
-                "post": {
-                  "cbi.submit": true
-                }
-              },
-              "depends": {
-                "acl": [ "luci-app-epm-qmi" ]
-              }
-            }
-          }
-          EOF
-
-          # 8) Normalize text line endings
+          # 6) Normalize line endings (CRLF → LF)
           find "${PKGROOT}" -type f \( \
-            -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' -o -name '*.html' -o \
-            -name '*.css' -o -path '*/etc/config/*' -o -name '*.sh' \
+            -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \
+            -o -name '*.css' -o -path '*/etc/config/*' \
           \) -print0 | xargs -0 -r dos2unix
 
-          # 9) Basic sanity checks
-          test -f "${PKGROOT}/etc/config/epm"
-          test -d "${PKGROOT}/usr/lib/lua/luci"
-          test -d "${PKGROOT}/www/luci-static/resources"
-          test -f "${PKGROOT}/usr/share/luci/menu.d/luci-app-epm-qmi.json"
-          test -f "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-epm-qmi.json"
+          # 7) Strip BOM if present
+          find "${PKGROOT}" -type f \( -name '*.lua' -o -name '*.js' -o -name '*.htm' \) \
+            -print0 | xargs -0 -r sed -i '1s/^\xef\xbb\xbf//'
 
+          # 8) Sanity checks
+          echo "=== pkgroot contents ==="
           find "${PKGROOT}" -maxdepth 6 -type f | sort
 
-      - name: Build IPK and APK packages with nFPM
+          test -f "${PKGROOT}/etc/config/lpac-esim"
+          test -f "${PKGROOT}/usr/lib/lua/luci/controller/lpac_esim.lua"
+          test -d "${PKGROOT}/www/luci-static/resources/lpac-esim"
+          test -f "${PKGROOT}/usr/share/luci/menu.d/luci-app-lpac-esim.json"
+          test -f "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-lpac-esim.json"
+          echo "All sanity checks passed."
+
+      - name: Build IPK and APK packages
         shell: bash
+        working-directory: ${{ env.SRC_DIR }}
         run: |
           set -euxo pipefail
 
           export PKG_VER="${{ env.VERSION }}"
 
-          cat > postinst.sh <<'EOF'
-          #!/bin/sh
-          set +e
-
-          echo "=============================================="
-          echo "luci-app-epm-qmi installed."
-          echo
-          echo "This is the QMI/AT LuCI frontend for lpac 2.3.0."
-          echo "The lpac backend is NOT bundled in this package."
-          echo
-          echo "Install the matching backend separately."
-          echo "Examples:"
-          echo "  opkg install lpac libqmi glib2 libcurl"
-          echo "or"
-          echo "  apk add lpac libqmi glib2 libcurl"
-          echo
-          echo "Then reopen LuCI."
-          echo "=============================================="
-
-          if [ -x /etc/init.d/rpcd ]; then
-            /etc/init.d/rpcd reload >/dev/null 2>&1 || true
-          fi
-
-          rm -f /tmp/luci-indexcache /tmp/luci-modulecache >/dev/null 2>&1 || true
-          exit 0
-          EOF
-
-          cat > prerm.sh <<'EOF'
-          #!/bin/sh
-          set +e
-          rm -f /tmp/luci-indexcache /tmp/luci-modulecache >/dev/null 2>&1 || true
-          exit 0
-          EOF
-
-          cat > postrm.sh <<'EOF'
-          #!/bin/sh
-          set +e
-          if [ -x /etc/init.d/rpcd ]; then
-            /etc/init.d/rpcd reload >/dev/null 2>&1 || true
-          fi
-          rm -f /tmp/luci-indexcache /tmp/luci-modulecache >/dev/null 2>&1 || true
-          exit 0
-          EOF
-
-          chmod 755 postinst.sh prerm.sh postrm.sh
-
-          export PKG_DESC="LuCI frontend for lpac 2.3.0 using native QMI with AT fallback on OpenWrt. This package is architecture-independent and is named luci-app-epm-qmi to distinguish it from older uqmi/mbim-oriented variants."
-
+          # Build IPK (opkg)
           export SOURCE_DATE_EPOCH=1704067200
+          nfpm package \
+            --config nfpm.yaml \
+            --packager ipk \
+            --target "${PKG_NAME}_${PKG_VER}_all.ipk"
+          echo "Built: ${PKG_NAME}_${PKG_VER}_all.ipk"
 
-          cat > nfpm_ipk.yaml <<EOF
-          name: ${PKG_NAME}
-          arch: all
-          platform: linux
-          version: ${PKG_VER}
-          maintainer: OpenWrt eSIM integration
-          description: "${PKG_DESC}"
-          homepage: https://github.com/estkme-group/lpac
-          contents:
-            - src: ./pkgroot/usr/lib/lua/luci/
-              dst: /usr/lib/lua/luci
-              type: tree
-            - src: ./pkgroot/www/luci-static/resources/
-              dst: /www/luci-static/resources
-              type: tree
-            - src: ./pkgroot/usr/share/luci/menu.d/
-              dst: /usr/share/luci/menu.d
-              type: tree
-            - src: ./pkgroot/usr/share/rpcd/acl.d/
-              dst: /usr/share/rpcd/acl.d
-              type: tree
-            - src: ./pkgroot/etc/config/epm
-              dst: /etc/config/epm
-              type: config|noreplace
-              file_info:
-                mode: 0644
-                mtime: 2024-01-01T00:00:00Z
-          scripts:
-            postinstall: ./postinst.sh
-            preremove: ./prerm.sh
-            postremove: ./postrm.sh
-          EOF
-
-          nfpm package --config nfpm_ipk.yaml --packager ipk --target "${PKG_NAME}_${PKG_VER}_all.ipk"
-
+          # Build APK (apk-tools, OpenWrt 24+)
           unset SOURCE_DATE_EPOCH
+          nfpm package \
+            --config nfpm.yaml \
+            --packager apk \
+            --target "${PKG_NAME}_${PKG_VER}_all.apk"
+          echo "Built: ${PKG_NAME}_${PKG_VER}_all.apk"
 
-          cat > nfpm_apk.yaml <<EOF
-          name: ${PKG_NAME}
-          arch: all
-          platform: linux
-          version: ${PKG_VER}
-          maintainer: OpenWrt eSIM integration
-          description: "${PKG_DESC}"
-          homepage: https://github.com/estkme-group/lpac
-          contents:
-            - src: ./pkgroot/usr/lib/lua/luci/
-              dst: /usr/lib/lua/luci
-              type: tree
-            - src: ./pkgroot/www/luci-static/resources/
-              dst: /www/luci-static/resources
-              type: tree
-            - src: ./pkgroot/usr/share/luci/menu.d/
-              dst: /usr/share/luci/menu.d
-              type: tree
-            - src: ./pkgroot/usr/share/rpcd/acl.d/
-              dst: /usr/share/rpcd/acl.d
-              type: tree
-            - src: ./pkgroot/etc/config/epm
-              dst: /etc/config/epm
-              type: config|noreplace
-              file_info:
-                mode: 0644
-          scripts:
-            postinstall: ./postinst.sh
-            preremove: ./prerm.sh
-            postremove: ./postrm.sh
-          EOF
-
-          nfpm package --config nfpm_apk.yaml --packager apk --target "${PKG_NAME}_${PKG_VER}_all.apk"
+          ls -lh ${PKG_NAME}_*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           files: |
-            *.ipk
-            *.apk
-          name: Release ${{ env.VERSION }}
-          tag_name: ${{ env.VERSION }}
+            ${{ env.SRC_DIR }}/*.ipk
+            ${{ env.SRC_DIR }}/*.apk
+          name: "LuCI ${{ env.VERSION }}"
+          tag_name: "luci-v${{ env.VERSION }}"
           prerelease: false
           draft: false
+          body: |
+            ## luci-app-lpac-esim ${{ env.VERSION }}
+
+            LuCI WebUI for eSIM profile management on OpenWrt.
+            Pure Lua + HTML + JS — **arch: all**, works on any OpenWrt target.
+
+            ### Features
+            - Profile list / switch / download / delete / rename
+            - QMI, AT, and MBIM backend support
+            - Async operations with real success/error result
+            - Modem reboot with 3-level cascade
+            - Notification management (process + clear)
+            - UCI-based configuration
+
+            ### Requirements
+            - `lpac-esim-qmi` backend package (installed separately)
+            - `luci-base`
+
+            ### Installation (opkg)
+            ```sh
+            opkg install luci-app-lpac-esim_${{ env.VERSION }}_all.ipk
+            ```
+
+            ### Installation (apk — OpenWrt 24+)
+            ```sh
+            apk add --allow-untrusted luci-app-lpac-esim_${{ env.VERSION }}_all.apk
+            ```
