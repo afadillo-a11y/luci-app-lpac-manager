@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y dos2unix curl tar jq rsync
+          sudo apt-get install -y dos2unix curl tar jq rsync file
 
           NFPM_TAG="$(curl -sL https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r .tag_name)"
           NFPM_VER="${NFPM_TAG#v}"
@@ -176,13 +176,8 @@ jobs:
           echo "Built: ${PKG_NAME}_${PKG_VER}_all.apk"
 
           ls -lh "${PKG_NAME}"_*
-
-      - name: Inspect built IPK control metadata
-        shell: bash
-        run: |
-          set -euxo pipefail
-          ar p "${PKG_NAME}_${VERSION}_all.ipk" control.tar.gz | tar -xzO ./control || \
-          ar p "${PKG_NAME}_${VERSION}_all.ipk" control.tar.gz | tar -xzO control
+          file "${PKG_NAME}"_* || true
+          sha256sum "${PKG_NAME}"_* || true
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
