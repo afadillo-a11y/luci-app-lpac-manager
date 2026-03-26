@@ -1,49 +1,79 @@
-# ==============================================================================
-# nFPM Build Configuration — luci-app-lpac-esim v1.2.1
-# LuCI WebUI for eSIM profile management on OpenWrt.
-# Architecture: noarch / all — pure Lua + HTML + JS, no compilation needed.
-#
-# NOTE: This nfpm.yaml works with pkgroot/ assembled by the workflow.
-# Do NOT run nfpm directly without building pkgroot first.
-# ==============================================================================
 name: "luci-app-lpac-esim"
 arch: "all"
 platform: "linux"
 version: "${PKG_VER}"
 section: "luci"
+priority: "optional"
 maintainer: "Medvedolog <Medvedolog@github.com>"
 homepage: "https://github.com/Medvedolog/lpac-esim-openwrt"
+license: "MIT"
 description: |
-  LuCI WebUI for eSIM profile management on OpenWrt.
-  Provides web interface for lpac-esim-qmi backend script.
-  Supports QMI, AT, and MBIM backends.
-  Features: profile list/switch/download/delete/rename, modem reboot,
-  chip info, notification management, UCI-based configuration.
+  LuCI WebUI and shell backend for eSIM profile management on OpenWrt.
+  Includes:
+    - LuCI frontend
+    - lpac-esim-qmi shell backend
+    - /usr/bin/lpac wrapper script
+
+  Requires separate installation of:
+    - lpac 2.3.0+ binary and its libraries
+    - modem transport utilities/drivers as needed
+
 depends:
   - luci-base
-  - lpac-esim-qmi
+  - jq
+  - coreutils-timeout
+
 contents:
+  # LuCI Lua files
   - src: ./pkgroot/usr/lib/lua/luci/
     dst: /usr/lib/lua/luci
     type: tree
+
+  # LuCI static resources
   - src: ./pkgroot/www/luci-static/resources/
     dst: /www/luci-static/resources
     type: tree
+
+  # LuCI menu definitions
   - src: ./pkgroot/usr/share/luci/menu.d/
     dst: /usr/share/luci/menu.d
     type: tree
+
+  # rpcd ACLs
   - src: ./pkgroot/usr/share/rpcd/acl.d/
     dst: /usr/share/rpcd/acl.d
     type: tree
+
+  # UCI config
   - src: ./pkgroot/etc/config/lpac-esim
     dst: /etc/config/lpac-esim
     type: "config|noreplace"
     file_info:
       mode: 0644
+
+  # Shell backend
+  - src: ./pkgroot/usr/bin/lpac-esim-qmi
+    dst: /usr/bin/lpac-esim-qmi
+    file_info:
+      mode: 0755
+
+  # Wrapper expected by backend
+  - src: ./pkgroot/usr/bin/lpac
+    dst: /usr/bin/lpac
+    file_info:
+      mode: 0755
+
 scripts:
   postinstall: ./scripts/postinst
   preremove: ./scripts/prerm
+
+overrides:
+  ipk:
+    fields:
+      Architecture: all
+
 apk:
   arch: "noarch"
+
 ipk:
   arch: "all"
