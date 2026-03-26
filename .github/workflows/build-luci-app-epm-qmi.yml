@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       build_target:
-        description: 'Package version (e.g. 1.2.1)'
+        description: 'Package version (e.g. 1.2.2)'
         required: true
-        default: '1.2.1'
+        default: '1.2.2'
 
 jobs:
   release:
@@ -43,8 +43,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y dos2unix curl tar jq rsync
 
-          NFPM_TAG=$(curl -sL https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r .tag_name)
-          NFPM_VER=${NFPM_TAG#v}
+          NFPM_TAG="$(curl -sL https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r .tag_name)"
+          NFPM_VER="${NFPM_TAG#v}"
           echo "Installing nFPM ${NFPM_VER}"
           curl -fsSL \
             "https://github.com/goreleaser/nfpm/releases/download/${NFPM_TAG}/nfpm_${NFPM_VER}_Linux_x86_64.tar.gz" \
@@ -73,50 +73,86 @@ jobs:
           mkdir -p "${PKGROOT}/usr/lib/lua/luci"
           rsync -a "${REPO_ROOT}/src/usr/lib/lua/luci/" "${PKGROOT}/usr/lib/lua/luci/"
 
-          # 2) Static web resources (JS, CSS)
+          # 2) Backend shell scripts
+          if [ -d "${REPO_ROOT}/src/usr/bin" ]; then
+            mkdir -p "${PKGROOT}/usr/bin"
+            rsync -a "${REPO_ROOT}/src/usr/bin/" "${PKGROOT}/usr/bin/"
+            find "${PKGROOT}/usr/bin" -type f -exec chmod 0755 {} \;
+          fi
+
+          # 3) Static web resources
           if [ -d "${REPO_ROOT}/htdocs/luci-static/resources" ]; then
             mkdir -p "${PKGROOT}/www/luci-static/resources"
             rsync -a "${REPO_ROOT}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
           fi
 
-          # 3) ACL + menu.d from root/
+          # 4) Root overlay (menu.d, acl.d, optional extras)
           if [ -d "${REPO_ROOT}/root" ]; then
             rsync -a "${REPO_ROOT}/root/" "${PKGROOT}/"
           fi
 
-          # 4) Normalize menu path if legacy tree appears
+          # 5) Normalize legacy menu path if needed
           mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
           if [ -d "${PKGROOT}/usr/share/menu.d" ]; then
             rsync -a "${PKGROOT}/usr/share/menu.d/" "${PKGROOT}/usr/share/luci/menu.d/"
             rm -rf "${PKGROOT}/usr/share/menu.d"
           fi
 
-          # 5) UCI config from etc/config
+          # 6) UCI config
           mkdir -p "${PKGROOT}/etc/config"
           if [ -f "${REPO_ROOT}/etc/config/lpac-esim" ]; then
             cp "${REPO_ROOT}/etc/config/lpac-esim" "${PKGROOT}/etc/config/lpac-esim"
           fi
 
-          # 6) Normalize line endings
+          # 7) Normalize line endings
           find "${PKGROOT}" -type f \( \
             -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \
-            -o -name '*.css' -o -path '*/etc/config/*' \
+            -o -name '*.css' -o -path '*/etc/config/*' -o -path '*/usr/bin/*' \
           \) -print0 | xargs -0 -r dos2unix
 
-          # 7) Strip UTF-8 BOM if present
-          find "${PKGROOT}" -type f \( -name '*.lua' -o -name '*.js' -o -name '*.htm' \) \
-            -print0 | xargs -0 -r sed -i '1s/^\xef\xbb\xbf//'
+          # 8) Strip UTF-8 BOM if present
+          find "${PKGROOT}" -type f \( \
+            -name '*.lua' -o -name '*.js' -o -name '*.htm' -o -path '*/usr/bin/*' \
+          \) -print0 | xargs -0 -r sed -i '1s/^\xef\xbb\xbf//'
 
-          # 8) Sanity checks
+          # 9) Rename wrapper if repository still stores it as lpac-wrapper.sh
+          if [ -f "${PKGROOT}/usr/bin/lpac-wrapper.sh" ] && [ ! -f "${PKGROOT}/usr/bin/lpac" ]; then
+            mv "${PKGROOT}/usr/bin/lpac-wrapper.sh" "${PKGROOT}/usr/bin/lpac"
+            chmod 0755 "${PKGROOT}/usr/bin/lpac"
+          fi
+
+          # 10) Sanity checks
           echo "=== pkgroot contents ==="
-          find "${PKGROOT}" -maxdepth 6 -type f | sort
+          find "${PKGROOT}" -maxdepth 8 -type f | sort
 
           test -f "${PKGROOT}/etc/config/lpac-esim"
           test -f "${PKGROOT}/usr/lib/lua/luci/controller/lpac_esim.lua"
           test -d "${PKGROOT}/www/luci-static/resources/lpac-esim"
           test -f "${PKGROOT}/usr/share/luci/menu.d/luci-app-lpac-esim.json"
           test -f "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-lpac-esim.json"
+          test -f "${PKGROOT}/usr/bin/lpac-esim-qmi"
+          test -f "${PKGROOT}/usr/bin/lpac"
           echo "All sanity checks passed."
+
+      - name: Show generated pkgroot tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find pkgroot -maxdepth 8 -type f | sort
+
+      - name: Show package metadata
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sed -n '1,220p' nfpm.yaml
+          if [ -f scripts/postinst ]; then
+            echo "=== scripts/postinst ==="
+            sed -n '1,220p' scripts/postinst
+          fi
+          if [ -f scripts/prerm ]; then
+            echo "=== scripts/prerm ==="
+            sed -n '1,220p' scripts/prerm
+          fi
 
       - name: Build IPK and APK packages
         shell: bash
@@ -139,7 +175,22 @@ jobs:
             --target "${PKG_NAME}_${PKG_VER}_all.apk"
           echo "Built: ${PKG_NAME}_${PKG_VER}_all.apk"
 
-          ls -lh ${PKG_NAME}_*
+          ls -lh "${PKG_NAME}"_*
+
+      - name: Inspect built IPK control metadata
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ar p "${PKG_NAME}_${VERSION}_all.ipk" control.tar.gz | tar -xzO ./control || \
+          ar p "${PKG_NAME}_${VERSION}_all.ipk" control.tar.gz | tar -xzO control
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-lpac-esim-${{ env.VERSION }}
+          path: |
+            *.ipk
+            *.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -152,3 +203,30 @@ jobs:
           tag_name: "luci-v${{ env.VERSION }}"
           prerelease: false
           draft: false
+          body: |
+            ## luci-app-lpac-esim ${{ env.VERSION }}
+
+            Unified LuCI package with:
+            - LuCI frontend
+            - lpac-esim-qmi shell backend
+            - /usr/bin/lpac wrapper script
+
+            ### Package dependencies
+            - luci-base
+            - jq
+            - coreutils-timeout
+
+            ### Required separately
+            - lpac 2.3.0+ binary and libraries
+            - for QMI mode: relevant QMI utilities/drivers
+            - for MBIM mode: relevant MBIM utilities/drivers
+
+            ### Install (opkg)
+            ```sh
+            opkg install luci-app-lpac-esim_${{ env.VERSION }}_all.ipk
+            ```
+
+            ### Install (apk)
+            ```sh
+            apk add --allow-untrusted luci-app-lpac-esim_${{ env.VERSION }}_all.apk
+            ```
