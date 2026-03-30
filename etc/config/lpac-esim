@@ -13,7 +13,7 @@ config lpac-esim 'main'
 	option mbim_device      '/dev/cdc-wdm0'
 	option mbim_proxy       '0'
 
-	# Reboot method: 'script' means lpac-esim-qmi handles cascade
+	# Reboot method: 'script' means lpac-esim handles cascade
 	option reboot_method    'script'
 
 	# Debug flags

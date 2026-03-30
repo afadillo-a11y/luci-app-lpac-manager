@@ -1,4 +1,4 @@
-/* lpac-esim-config.js — Configuration load/save */
+/* lpac-esim-config.js — v1.3.0 */
 'use strict';
 
 function loadConfig() {

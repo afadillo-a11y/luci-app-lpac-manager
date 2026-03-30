@@ -1,14 +1,22 @@
 #!/bin/sh
+# postinst — luci-app-lpac-manager v1.3.0
 set +e
 
 echo "=============================================="
-echo " luci-app-lpac-esim installed."
+echo " luci-app-lpac-manager installed."
 echo ""
-echo " LuCI WebUI for eSIM profile management."
-echo " Requires lpac-esim-qmi backend (installed separately)."
+echo " Includes: lpac wrapper, backend script,"
+echo " and LuCI eSIM Manager web interface."
+echo ""
+echo " Prerequisites (install separately):"
+echo "   lpac, libqmi/qmi-utils, luci-base, jq"
+echo "   For MBIM: libmbim/mbim-utils"
 echo ""
 echo " Navigate to: Modem → eSIM Manager"
 echo "=============================================="
+
+chmod +x /usr/bin/lpac 2>/dev/null || true
+chmod +x /usr/bin/lpac-esim 2>/dev/null || true
 
 if [ -x /etc/init.d/rpcd ]; then
     /etc/init.d/rpcd reload >/dev/null 2>&1 || true
@@ -16,5 +24,5 @@ fi
 
 rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* >/dev/null 2>&1 || true
 
-logger -t lpac-esim "LuCI app installed."
+logger -t lpac-esim "luci-app-lpac-manager v1.3.0 installed."
 exit 0

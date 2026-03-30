@@ -1,4 +1,4 @@
-/* lpac-esim-diagnostics.js — Syslog viewer + modem reset actions */
+/* lpac-esim-diagnostics.js — v1.3.0 */
 'use strict';
 
 function loadSyslog() {

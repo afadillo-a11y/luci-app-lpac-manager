@@ -1,4 +1,4 @@
-/* lpac-esim-info.js — eSIM Info & Modem Status tab */
+/* lpac-esim-info.js — v1.3.0 */
 'use strict';
 
 function loadESIMInfo() {

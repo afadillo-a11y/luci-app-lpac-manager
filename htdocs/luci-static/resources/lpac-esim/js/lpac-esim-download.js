@@ -1,4 +1,4 @@
-/* lpac-esim-download.js — Profile download with QR and manual input */
+/* lpac-esim-download.js — v1.3.0 */
 'use strict';
 
 var uploadedFile = null;

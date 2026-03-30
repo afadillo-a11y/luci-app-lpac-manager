@@ -1,4 +1,4 @@
-/* lpac-esim-profiles.js — Profile list, switch, reboot */
+/* lpac-esim-profiles.js — v1.3.0 */
 'use strict';
 
 function loadProfiles() {

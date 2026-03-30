@@ -1,17 +1,26 @@
 -- /usr/lib/lua/luci/controller/lpac_esim.lua
--- LuCI controller for eSIM management via lpac-esim-qmi backend
--- Version: 1.2.2
+-- LuCI controller for eSIM management via lpac-esim backend
+-- Version: 1.3.0
 -- License: GPL-2.0
 --
+-- Changelog:
+--   1.3.0 - Diagnostics tab (syslog, soft/usb/uicc reset), io.popen fix,
+--           theme-safe CSS, adaptive reset descriptions, MBIM config text fix,
+--           unified nfpm build (wrapper + backend + luci in one package)
+--   1.2.2 - ANSI/jq/async fixes, diagnostics APIs
+--   1.2.1 - async_finish result model, valid_iccid helper, LPA regex loosened
+--   1.2.0 - download/delete/nickname/notif_process, full MBIM support
+--   1.0.0 - Initial release: profiles, chip, switch, reboot, config
+--
 -- Architecture: integration adapter between browser (JS Fetch API) and backend script.
--- Modem/eUICC logic lives in lpac-esim-qmi (POSIX shell).
+-- Modem/eUICC logic lives in lpac-esim (POSIX shell).
 -- Controller handles: UCI config, CLI flag building, input validation, JSON response wrapping.
 --
 -- Note: write endpoints require POST only.
 -- CSRF token validation is omitted for compatibility with older LuCI/OpenWrt builds.
 -- This is an intentional tradeoff for a home-router local-network scenario.
 --
--- Flow:  Browser → Fetch → LuCI (uhttpd) → lpac_esim.lua → lpac-esim-qmi --api → stdout JSON → Browser
+-- Flow:  Browser → Fetch → LuCI (uhttpd) → lpac_esim.lua → lpac-esim --api → stdout JSON → Browser
 -- Async: Browser POST → lua → script --api switch → {"processing"} → Browser polls lock-status
 
 module("luci.controller.lpac_esim", package.seeall)
@@ -25,11 +34,11 @@ local uci  = require "luci.model.uci".cursor()
 -- Constants
 -- ============================================================================
 
-local BACKEND_SCRIPT = "/usr/bin/lpac-esim-qmi"
+local BACKEND_SCRIPT = "/usr/bin/lpac-esim"
 local UCI_CONFIG     = "lpac-esim"
 local UCI_SECTION    = "lpac-esim"
 local LOG_TAG        = "lpac-esim"
-local RUN_DIR        = "/tmp/lpac-esim-qmi"
+local RUN_DIR        = "/tmp/lpac-esim"
 local RUN_LOG        = RUN_DIR .. "/run.log"
 
 -- ============================================================================

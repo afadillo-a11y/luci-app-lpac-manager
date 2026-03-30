@@ -1,4 +1,4 @@
-<!-- /usr/lib/lua/luci/view/lpac_esim/diagnostics.htm -->
+<!-- /usr/lib/lua/luci/view/lpac_esim/diagnostics.htm — v1.3.0 -->
 
 <fieldset class="cbi-section">
     <legend><%:System Log%></legend>
@@ -17,28 +17,28 @@
         <div class="esim-diag-actions">
             <div class="esim-diag-card">
                 <strong><%:Soft Reset%></strong>
-                <p><%:QMI/MBIM radio off+on or AT+CFUN. No USB re-enumeration. Fastest recovery.%></p>
+                <p><%:Radio off/on cycle. Fastest recovery without USB re-enumeration. Uses the active transport protocol automatically.%></p>
                 <input type="button" class="cbi-button cbi-button-apply" value="<%:Soft Reset%>" onclick="diagAction('soft_reset', 'Soft Reset')" />
             </div>
             <div class="esim-diag-card">
                 <strong><%:USB Port Re-init%></strong>
-                <p><%:USB sysfs authorized 0→1. Simulates physical unplug/replug. Modem fully re-enumerates.%></p>
+                <p><%:Drop and re-enumerate the USB port via sysfs. Equivalent to physically unplugging and reinserting the modem.%></p>
                 <input type="button" class="cbi-button cbi-button-remove" value="<%:USB Reset%>" onclick="diagAction('usb_reset', 'USB Reset')" />
             </div>
             <div class="esim-diag-card">
-                <strong><%:UICC SIM Reset%></strong>
-                <p><%:Power-cycle the SIM slot via QMI UIM. Forces SIM re-read without modem reboot.%></p>
-                <input type="button" class="cbi-button cbi-button-apply" value="<%:UICC Reset%>" onclick="diagAction('uicc_reset', 'UICC Reset')" />
+                <strong><%:SIM Card Power Cycle%></strong>
+                <p><%:Power off and back on the SIM slot. Forces the modem to re-read the eUICC card without a full reboot.%></p>
+                <input type="button" class="cbi-button cbi-button-apply" value="<%:SIM Reset%>" onclick="diagAction('uicc_reset', 'SIM Reset')" />
             </div>
             <div class="esim-diag-card">
                 <strong><%:Hard Reboot%></strong>
-                <p><%:Full modem OS reboot with 3-level cascade (QMI→AT→USB). Use after profile switch issues.%></p>
+                <p><%:Full modem OS reboot with automatic fallback cascade. Use when profile switch does not take effect.%></p>
                 <input type="button" class="cbi-button cbi-button-remove" value="<%:Hard Reboot%>" onclick="diagAction('reboot_modem', 'Hard Reboot')" />
             </div>
         </div>
     </div>
 </fieldset>
 
-<div id="diag-result" style="display: none; margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
+<div id="diag-result" style="display: none; margin-top: 15px; padding: 10px; border-radius: 6px;"></div>
 
 <script type="text/javascript" src="<%=resource%>/lpac-esim/js/lpac-esim-diagnostics.js"></script>

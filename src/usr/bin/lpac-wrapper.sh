@@ -1,7 +1,12 @@
 #!/bin/sh
 # /usr/bin/lpac — OpenWrt wrapper for /usr/lib/lpac
+# Version: 1.3.0
 # Auto-configures LPAC environment variables based on APDU backend.
 # Supports QMI (default), AT, and MBIM backends.
+#
+# Changelog:
+#   1.3.0 - MBIM backend support with proxy option
+#   1.0.0 - Initial QMI/AT wrapper
 #
 # Usage:
 #   lpac chip info                        # uses defaults (QMI)

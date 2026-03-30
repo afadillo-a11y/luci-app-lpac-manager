@@ -1,4 +1,4 @@
-/* lpac-esim-main.js — Tab management, connectivity, lock polling */
+/* lpac-esim-main.js — v1.3.0 */
 'use strict';
 
 var BASE_URL = L.env.scriptname + '/admin/modem/lpac-esim/';

@@ -1,63 +1,68 @@
-/* lpac-esim.css — Styles for eSIM Manager LuCI app */
-/* Theme-safe: works with light, dark, and custom LuCI themes */
+/* lpac-esim.css — v1.3.0
+ * Theme-safe styles for eSIM Manager LuCI app.
+ * Works with light, dark, and custom OpenWrt themes.
+ * Changelog:
+ *   1.3.0 - Vivid colored tabs, removed gray bar, adaptive reset cards,
+ *           theme-safe badges/borders, terminal scrollbar styling
+ *   1.2.2 - Terminal log viewer, diagnostics grid, initial theme fixes
+ */
 
-/* ===== Tab styling — theme-safe ===== */
-.cbi-tabcontent {
-    display: none;
-}
+/* ===== Tab bar — vivid, no gray line ===== */
+.cbi-tabcontent { display: none; }
 .cbi-tabcontent-active,
-.cbi-tabcontent.cbi-tabcontent-active {
-    display: block !important;
-}
+.cbi-tabcontent.cbi-tabcontent-active { display: block !important; }
+
 .cbi-tabmenu ul {
     list-style: none;
     padding: 0;
     margin: 0 0 20px 0;
     display: flex;
     flex-wrap: wrap;
-    border-bottom: none;
-    gap: 4px;
+    gap: 2px;
+    border-bottom: none !important;
+    background: none !important;
 }
-.cbi-tabmenu li {
-    margin: 0;
-}
+.cbi-tabmenu li { margin: 0; }
 .cbi-tabmenu li a {
     display: block;
-    padding: 8px 18px;
+    padding: 10px 20px;
     text-decoration: none;
-    color: inherit;
-    opacity: 0.65;
-    border: 1px solid transparent;
-    border-radius: 6px 6px 0 0;
-    transition: opacity 0.2s, background 0.2s;
     font-size: 14px;
+    font-weight: 500;
+    color: #4a7aab;
+    background: rgba(74, 122, 171, 0.08);
+    border: 2px solid rgba(74, 122, 171, 0.15);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
 }
 .cbi-tabmenu li a:hover {
-    opacity: 0.85;
-    background: rgba(128, 128, 128, 0.1);
+    color: #2d6da3;
+    background: rgba(74, 122, 171, 0.15);
+    border-color: rgba(74, 122, 171, 0.3);
+    border-bottom-color: transparent;
 }
 .cbi-tabmenu li.cbi-tab-active a {
-    opacity: 1;
-    font-weight: bold;
-    color: #0078d4;
-    border-color: rgba(128, 128, 128, 0.25);
-    border-bottom-color: transparent;
-    background: rgba(128, 128, 128, 0.05);
+    color: #fff !important;
+    background: #3a7bd5 !important;
+    border-color: #3a7bd5 !important;
+    border-bottom-color: transparent !important;
+    font-weight: 700;
 }
 
 /* ===== Profile status badges ===== */
 .esim-badge {
     display: inline-block;
-    padding: 3px 10px;
+    padding: 4px 12px;
     border-radius: 12px;
     font-size: 0.85em;
     font-weight: bold;
     text-transform: capitalize;
 }
 .esim-badge-enabled {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+    background: #28a745;
+    color: #fff;
+    border: none;
 }
 .esim-badge-disabled {
     background: rgba(128, 128, 128, 0.15);
@@ -66,46 +71,36 @@
     border: 1px solid rgba(128, 128, 128, 0.25);
 }
 
-/* ===== Table responsive ===== */
-.table-responsive {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-.cbi-section-table {
-    width: 100%;
-    border-collapse: collapse;
-}
+/* ===== Table ===== */
+.table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.cbi-section-table { width: 100%; border-collapse: collapse; }
 .cbi-section-table th,
 .cbi-section-table td {
-    padding: 8px 12px;
+    padding: 10px 12px;
     text-align: left;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+    border-bottom: 1px solid rgba(128, 128, 128, 0.12);
     vertical-align: middle;
 }
 .cbi-section-table thead th {
     font-weight: bold;
-    border-bottom: 2px solid rgba(128, 128, 128, 0.3);
+    border-bottom: 2px solid rgba(128, 128, 128, 0.25);
 }
-.cbi-section-table tr:hover {
-    background: rgba(128, 128, 128, 0.05);
-}
+.cbi-section-table tr:hover { background: rgba(128, 128, 128, 0.04); }
 
-/* ===== Button spacing ===== */
+/* ===== Buttons ===== */
 .cbi-page-custom-actions {
     margin-top: 15px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(128, 128, 128, 0.15);
+    padding-top: 12px;
+    border-top: 1px solid rgba(128, 128, 128, 0.12);
 }
-.cbi-page-custom-actions .cbi-button {
-    margin-right: 8px;
-}
+.cbi-page-custom-actions .cbi-button { margin-right: 8px; margin-bottom: 4px; }
 
-/* ===== Fieldset sections ===== */
+/* ===== Fieldset ===== */
 fieldset.cbi-section {
     margin-bottom: 20px;
-    border: 1px solid rgba(128, 128, 128, 0.2);
-    border-radius: 4px;
-    padding: 15px;
+    border: 1px solid rgba(128, 128, 128, 0.18);
+    border-radius: 6px;
+    padding: 16px;
 }
 fieldset.cbi-section legend {
     font-weight: bold;
@@ -114,9 +109,7 @@ fieldset.cbi-section legend {
 }
 
 /* ===== Config form ===== */
-.cbi-value {
-    margin-bottom: 12px;
-}
+.cbi-value { margin-bottom: 12px; }
 .cbi-value-title {
     display: inline-block;
     min-width: 180px;
@@ -124,66 +117,59 @@ fieldset.cbi-section legend {
     vertical-align: top;
     padding-top: 6px;
 }
-.cbi-value-field {
-    display: inline-block;
-}
-.cbi-value-description {
-    font-size: 0.85em;
-    opacity: 0.6;
-    margin-top: 3px;
-}
-.cbi-input-text,
-.cbi-input-select {
-    min-width: 250px;
-}
+.cbi-value-field { display: inline-block; }
+.cbi-value-description { font-size: 0.85em; opacity: 0.55; margin-top: 3px; }
+.cbi-input-text, .cbi-input-select { min-width: 250px; }
 
-/* ===== Terminal / Log viewer ===== */
+/* ===== Terminal log viewer ===== */
 .esim-terminal {
-    background: #1e1e1e;
-    color: #d4d4d4;
-    font-family: 'Courier New', monospace;
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
     font-size: 12px;
-    line-height: 1.5;
-    padding: 12px;
-    border-radius: 6px;
-    min-height: 200px;
+    line-height: 1.6;
+    padding: 14px;
+    border-radius: 8px;
+    min-height: 220px;
     max-height: 500px;
     overflow-y: auto;
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-all;
-    border: 1px solid #333;
+    border: 1px solid #30363d;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
-.esim-terminal::-webkit-scrollbar {
-    width: 8px;
-}
-.esim-terminal::-webkit-scrollbar-track {
-    background: #2d2d2d;
-}
-.esim-terminal::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 4px;
-}
+.esim-terminal::-webkit-scrollbar { width: 8px; }
+.esim-terminal::-webkit-scrollbar-track { background: #161b22; border-radius: 4px; }
+.esim-terminal::-webkit-scrollbar-thumb { background: #484f58; border-radius: 4px; }
+.esim-terminal::-webkit-scrollbar-thumb:hover { background: #6e7681; }
 
-/* ===== Diagnostics action cards ===== */
+/* ===== Diagnostics reset cards — 2x2 grid ===== */
 .esim-diag-actions {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+}
+@media (max-width: 700px) {
+    .esim-diag-actions { grid-template-columns: 1fr; }
 }
 .esim-diag-card {
     border: 1px solid rgba(128, 128, 128, 0.2);
-    border-radius: 6px;
-    padding: 14px;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
 }
 .esim-diag-card strong {
     display: block;
-    margin-bottom: 6px;
-    font-size: 14px;
+    margin-bottom: 8px;
+    font-size: 15px;
 }
 .esim-diag-card p {
-    font-size: 12px;
-    opacity: 0.65;
-    margin: 0 0 10px;
-    line-height: 1.4;
+    font-size: 13px;
+    opacity: 0.6;
+    margin: 0 0 12px;
+    line-height: 1.5;
+    flex-grow: 1;
 }
+.esim-diag-card .cbi-button { align-self: flex-start; }
