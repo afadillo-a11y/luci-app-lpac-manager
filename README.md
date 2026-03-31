@@ -2,7 +2,7 @@
 
 ## What is this?
 
-**luci-app-epm-qmi** is a LuCI web interface for OpenWrt that provides eSIM profile management through **lpac 2.3.0**.
+**luci-app-lpac-manager** is a LuCI web interface for OpenWrt that provides eSIM profile management through **lpac 2.3.0**.
 
 This variant is specifically adapted for **OpenWrt 24.10.x** and focuses on:
 
@@ -143,7 +143,7 @@ AT fallback example:
 
 This project uses the package name:
 
-- **`luci-app-epm-qmi`**
+- **`luci-app-lpac-manager`**
 
 The goal is to clearly separate this branch from:
 - older `luci-app-epm` builds
@@ -217,13 +217,3 @@ Useful areas:
 - the community members testing eSIM workflows on embedded devices
 
 ---
-
-## Summary
-
-If you need a LuCI frontend for **lpac 2.3.0** on **OpenWrt 24.10.x**, with:
-
-- **QMI as primary backend**
-- **AT as fallback**
-- support for **external eSIM cards in modem SIM slots**
-
-then **luci-app-epm-qmi** is the intended branch.
