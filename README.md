@@ -1,4 +1,4 @@
-# luci-app-lpac-manager — Управление eSIM-профилями на OpenWrt
+# luci-app-lpac-manager — Управление eSIM-профилями под OpenWrt
 
 ## Что это
 
