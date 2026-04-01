@@ -1,8 +1,8 @@
-/* lpac-esim-diagnostics.js — v1.3.3 */
+/* lpac-esim-diagnostics.js — v1.3.2 */
 'use strict';
 
 function loadRunlog() {
-    var el = document.getElementById('diag-log');
+    var el = document.getElementById('diag-runlog');
     if (!el) return;
     el.textContent = 'Loading system check...';
     apiGet('runlog')
@@ -143,60 +143,3 @@ function showDiagResult(type, msg) {
 }
 
 // Loaded by showTab() on first tab activation
-
-/* ===== AT Terminal ===== */
-var atHistory = [];
-
-function sendAtCmd() {
-    var input = document.getElementById('at-cmd-input');
-    var term = document.getElementById('at-terminal');
-    if (!input || !term) return;
-
-    var cmd = input.value.trim();
-    if (!cmd) cmd = 'ATI';
-
-    // Show sending state
-    atHistory.push('> ' + cmd);
-    atHistory.push('  (sending...)');
-    term.textContent = atHistory.join('\n');
-    term.scrollTop = term.scrollHeight;
-
-    apiPost('at_cmd', { cmd: cmd })
-        .then(function(data) {
-            // Remove "(sending...)"
-            atHistory.pop();
-            if (data && data.payload && data.payload.code === 0 && data.payload.data) {
-                var resp = data.payload.data.response || '(no response)';
-                var port = data.payload.data.port || '?';
-                atHistory.push(resp);
-                atHistory.push('  [' + port + ']');
-            } else {
-                var errMsg = (data && data.payload) ? data.payload.message : 'unknown error';
-                atHistory.push('  ERROR: ' + errMsg);
-            }
-            term.textContent = atHistory.join('\n');
-            term.scrollTop = term.scrollHeight;
-        })
-        .catch(function(e) {
-            atHistory.pop();
-            atHistory.push('  ERROR: ' + (e.message || 'network'));
-            term.textContent = atHistory.join('\n');
-            term.scrollTop = term.scrollHeight;
-        });
-
-    // Clear input for next command
-    input.value = '';
-    input.focus();
-}
-
-function sendAtPreset(cmd) {
-    var input = document.getElementById('at-cmd-input');
-    if (input) input.value = cmd;
-    sendAtCmd();
-}
-
-function clearAtTerminal() {
-    atHistory = [];
-    var term = document.getElementById('at-terminal');
-    if (term) term.textContent = 'Ready. Type an AT command or click Send.';
-}

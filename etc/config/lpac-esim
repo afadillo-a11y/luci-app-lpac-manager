@@ -5,7 +5,6 @@ config lpac-esim 'main'
 	# QMI (primary)
 	option qmi_device       '/dev/cdc-wdm0'
 	option qmi_sim_slot     '1'
-	option sim_slot         '0'
 
 	# AT (fallback for reboot cascade)
 	option at_device        '/dev/ttyUSB3'

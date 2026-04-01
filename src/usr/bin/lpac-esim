@@ -1,7 +1,7 @@
 #!/bin/sh
 # lpac-esim — eSIM profile management for OpenWrt
 # BusyBox ash / POSIX shell
-# Version: 1.3.3
+# Version: 1.3.2
 # License: GPL-2.0
 #
 # Changelog:
@@ -132,7 +132,7 @@ parse_args() {
             --no-color)       NO_COLOR=1 ;;
             --api)            API_MODE=1; NONINTERACTIVE=1; QUIET=1; NO_COLOR=1 ;;
             --non-interactive) NONINTERACTIVE=1 ;;
-            doctor|status|chip|profiles|notif-clear|notif-list|notif-process|modem-status|select-devices|reboot-modem|lock-status|syslog|soft-reset|usb-reset|uicc-reset|runlog|version|at-cmd)
+            doctor|status|chip|profiles|notif-clear|notif-list|notif-process|modem-status|select-devices|reboot-modem|lock-status|syslog|soft-reset|usb-reset|uicc-reset|runlog|version)
                               COMMAND="$1" ;;
             enable|disable|switch)
                               COMMAND="$1"; shift; COMMAND_ARG="$1" ;;
@@ -870,11 +870,11 @@ api_download() {
         QUIET=1; NONINTERACTIVE=1
 
         # Workaround: mbedTLS on OpenWrt may fail TLS verification for SM-DP+ servers
+        # even with valid ca-certificates installed. Temporarily allow insecure for download.
         _curlrc_tmp=""
         if [ ! -f /root/.curlrc ]; then
             echo "insecure" > /root/.curlrc
             _curlrc_tmp="1"
-            trap 'rm -f /root/.curlrc' EXIT HUP INT TERM
         fi
 
         out="${TMP_DIR}/download.json"
@@ -882,7 +882,7 @@ api_download() {
         code="$(json_code "$out")"
         msg="$(json_message "$out")"
 
-        # Clean up temporary .curlrc (also handled by trap)
+        # Clean up temporary .curlrc
         [ "$_curlrc_tmp" = "1" ] && rm -f /root/.curlrc
 
         if [ "$code" = "0" ]; then
@@ -1006,7 +1006,7 @@ api_version() {
     local lpac_ver=""
     lpac_ver="$($LPAC_BIN version 2>/dev/null | "$JQ_BIN" -r '.payload.data // "unknown"' 2>/dev/null)"
     [ -z "$lpac_ver" ] && lpac_ver="unknown"
-    local script_ver="1.3.3"
+    local script_ver="1.3.2"
     local be="${BACKEND:-unknown}"
     local dev=""
     case "$be" in
@@ -1023,51 +1023,6 @@ api_version() {
         --arg qmi "${QMI_DEVICE:-none}" \
         --arg mbim "${MBIM_DEVICE:-none}" \
         '{"type":"lpa","payload":{"code":0,"message":"success","data":{"script_version":$sv,"lpac_version":$lv,"backend":$be,"device":$dev,"at_device":$at,"qmi_device":$qmi,"mbim_device":$mbim}}}'
-}
-
-# POST at-cmd <command> — send AT command to serial port, return response
-api_at_cmd() {
-    local cmd="$1"
-    [ -z "$cmd" ] && cmd="ATI"
-
-    # Determine AT device
-    local port="$AT_DEVICE"
-    [ -z "$port" ] && port="$(uci_get_default at_device '/dev/ttyUSB3')"
-    if [ ! -c "$port" ]; then
-        api_err "no_device" "AT device $port not found"
-        return 1
-    fi
-
-    # Sanitize command — allow only printable ASCII, strip dangerous chars
-    cmd="$(printf '%s' "$cmd" | tr -d '\000-\010\013\014\016-\037\177' | head -c 200)"
-
-    # Configure port and send command
-    local resp=""
-    resp="$(
-        {
-            stty -F "$port" 115200 raw -echo -echoe -echok 2>/dev/null
-            # Flush input buffer
-            cat < "$port" > /dev/null &
-            local flush_pid=$!
-            sleep 0.1
-            kill "$flush_pid" 2>/dev/null
-            kill -9 "$flush_pid" 2>/dev/null
-            wait "$flush_pid" 2>/dev/null
-            # Send command
-            printf '%s\r' "$cmd" > "$port"
-            # Read response with timeout
-            timeout 3 cat < "$port" 2>/dev/null
-        } 2>/dev/null
-    )"
-
-    # Clean up response: remove echo of command, CR, trailing blanks
-    resp="$(printf '%s' "$resp" | tr '\r' '\n' | sed '/^$/d' | sed "1{/^${cmd}$/d;}" )"
-
-    "$JQ_BIN" -nc \
-        --arg cmd "$cmd" \
-        --arg resp "$resp" \
-        --arg port "$port" \
-        '{"type":"lpa","payload":{"code":0,"message":"success","data":{"command":$cmd,"response":$resp,"port":$port}}}'
 }
 
 # POST soft-reset — QMI DMS offline+online (no USB re-enum)
@@ -1228,11 +1183,7 @@ menu_maintenance() {
             3) notif_clear_queue ;;
             4) talk "Processing notifications..."; out="${TMP_DIR}/notif-proc.json"; run_lpac_json_to_file "notification process -a -r" "$out" 60 && ok "Notifications processed and removed." || warn "Processing failed." ;;
             5) select_qmi_device; select_at_port ;;
-            6) title; info "OS  : $(uname -a 2>/dev/null)"; check_required_tools; check_lpac_version; info "Backend: $BACKEND (QMI: ${QMI_DEVICE:-none}, AT: ${AT_DEVICE:-none}, MBIM: ${MBIM_DEVICE:-none})"
-               if [ "$BACKEND" = "mbim" ]; then
-                   if pidof mbim-proxy >/dev/null 2>&1; then ok "mbim-proxy is running"
-                   else warn "mbim-proxy is NOT running (may be needed for MBIM mode)"; fi
-               fi ;;
+            6) title; info "OS  : $(uname -a 2>/dev/null)"; check_required_tools; check_lpac_version; info "Backend: $BACKEND (QMI: ${QMI_DEVICE:-none}, AT: ${AT_DEVICE:-none}, MBIM: ${MBIM_DEVICE:-none})" ;;
             0) return 0 ;;
             q|Q|quit|exit) exit 0 ;;
             *) warn "Unknown choice" ;;
@@ -1356,7 +1307,6 @@ tui_download_profile() {
     if [ ! -f /root/.curlrc ]; then
         echo "insecure" > /root/.curlrc
         _curlrc_tmp="1"
-        trap '[ "$_curlrc_tmp" = "1" ] && rm -f /root/.curlrc' EXIT HUP INT TERM
     fi
 
     out="${TMP_DIR}/download.json"
@@ -1406,11 +1356,8 @@ main() {
     if [ "$API_MODE" = "1" ]; then
         # Unset proxy — lpac/curl must connect directly to SM-DP+ servers
         unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
-        # Run tool check only once (skip if run.log exists and is fresh <1 hour)
-        if [ ! -f "$LOG_FILE" ] || [ "$(find "$LOG_FILE" -mmin +60 2>/dev/null)" ]; then
-            : > "$LOG_FILE"
-            { check_required_tools; } >> "$LOG_FILE" 2>&1
-        fi
+        # Redirect all tool-check chatter to log only
+        { check_required_tools; } >> "$LOG_FILE" 2>&1
         autodetect_devices
         case "$COMMAND" in
             profiles)     api_profiles ;;
@@ -1428,7 +1375,6 @@ main() {
             syslog)       api_syslog "$COMMAND_ARG" ;;
             runlog)       api_runlog ;;
             version)      api_version ;;
-            at-cmd)       api_at_cmd "$COMMAND_ARG" ;;
             soft-reset)   api_soft_reset ;;
             usb-reset)    api_usb_reset ;;
             uicc-reset)   api_uicc_reset ;;

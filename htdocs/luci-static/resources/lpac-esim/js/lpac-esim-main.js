@@ -1,4 +1,4 @@
-/* lpac-esim-main.js — v1.3.3 */
+/* lpac-esim-main.js — v1.3.2 */
 'use strict';
 
 var BASE_URL = L.env.scriptname + '/admin/modem/lpac-esim/';
@@ -34,7 +34,7 @@ function showTab(tabId, el) {
             case 'profiles-tab':      if (typeof loadProfiles === 'function') loadProfiles(); break;
             case 'notifications-tab': if (typeof loadNotifications === 'function') loadNotifications(); break;
             case 'config-tab':        if (typeof loadConfig === 'function') loadConfig(); break;
-            case 'diag-tab':          if (typeof loadSyslog === 'function') loadSyslog(); break;
+            case 'diag-tab':          if (typeof loadRunlog === 'function') loadRunlog(); if (typeof loadSyslog === 'function') loadSyslog(); break;
         }
     }
     return false;
@@ -94,34 +94,26 @@ function checkLockStatus(callback) {
 
 function startLockPolling(onUnlocked) {
     if (lockPollTimer) clearInterval(lockPollTimer);
-    var networkLost = false;
     lockPollTimer = setInterval(function() {
         fetch(BASE_URL + 'lock_status', { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                networkLost = false;
                 var banner = document.getElementById('esim-lock-banner');
-                var bannerText = document.getElementById('esim-lock-text');
                 var d = data && data.payload && data.payload.data;
                 if (d && d.locked) {
                     if (banner) banner.style.display = 'block';
-                    if (bannerText) bannerText.textContent = 'Operation in progress... Please wait.';
                 } else {
                     if (banner) banner.style.display = 'none';
                     clearInterval(lockPollTimer);
                     lockPollTimer = null;
+                    // Pass last_result to callback so caller knows success vs error
                     var result = (d && d.last_result) ? d.last_result : null;
                     if (onUnlocked) onUnlocked(result);
                 }
             })
             .catch(function() {
-                // Network lost (modem rebooting, interface down)
-                networkLost = true;
                 var banner = document.getElementById('esim-lock-banner');
-                var bannerText = document.getElementById('esim-lock-text');
-                if (banner) banner.style.display = 'block';
-                if (bannerText) bannerText.textContent = 'Connection lost — modem may be rebooting. Waiting for recovery...';
-                // Don't clear interval — keep retrying
+                if (banner) banner.style.display = 'none';
             });
     }, 5000);
 }

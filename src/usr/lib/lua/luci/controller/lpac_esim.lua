@@ -1,6 +1,6 @@
 -- /usr/lib/lua/luci/controller/lpac_esim.lua
 -- LuCI controller for eSIM management via lpac-esim backend
--- Version: 1.3.3
+-- Version: 1.3.2
 -- License: GPL-2.0
 --
 -- Changelog:
@@ -73,7 +73,6 @@ function index()
     entry({"admin", "modem", "lpac-esim", "syslog"},     call("api_syslog"),     nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "runlog"},     call("api_runlog"),     nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "version"},    call("api_version"),    nil).leaf = true
-    entry({"admin", "modem", "lpac-esim", "at_cmd"},     call("api_at_cmd"),     nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "soft_reset"},  call("api_soft_reset"),  nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "usb_reset"},   call("api_usb_reset"),   nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "uicc_reset"},  call("api_uicc_reset"),  nil).leaf = true
@@ -93,7 +92,6 @@ local function read_config()
     config.apdu_backend  = config.apdu_backend  or "qmi"
     config.qmi_device    = config.qmi_device    or "/dev/cdc-wdm0"
     config.qmi_sim_slot  = config.qmi_sim_slot  or "1"
-    config.sim_slot      = config.sim_slot      or "0"
     config.at_device     = config.at_device     or ""
     config.mbim_device   = config.mbim_device   or "/dev/cdc-wdm0"
     config.mbim_proxy    = config.mbim_proxy    or "0"
@@ -350,7 +348,7 @@ function api_save_config()
     -- Whitelist allowed config keys to prevent injection
     local allowed_keys = {
         "apdu_backend",
-        "qmi_device", "qmi_sim_slot", "sim_slot",
+        "qmi_device", "qmi_sim_slot",
         "at_device",
         "mbim_device", "mbim_proxy",
         "reboot_method",
@@ -531,16 +529,6 @@ function api_version()
     local raw  = exec_script("version", 5, true)  -- silent
     local data = parse_lpac_json(raw)
     send_json(data or make_error("backend_error", "No response from backend"))
-end
-
---- POST: Send AT command to serial port
-function api_at_cmd()
-    local at_cmd = http.formvalue("cmd") or "ATI"
-    -- Sanitize: only allow printable ASCII, max 200 chars
-    at_cmd = at_cmd:gsub("[^%w%s%+%-%=%?%^%$%*%#%%/%.,:;!@&()%[%]]", ""):sub(1, 200)
-    local raw = exec_script("at-cmd " .. util.shellquote(at_cmd), 8)
-    local data = parse_lpac_json(raw)
-    send_json(data or make_error("backend_error", "No response from AT port"))
 end
 
 --- POST: Soft reset modem (QMI offline/online or AT+CFUN, no USB re-enum)
