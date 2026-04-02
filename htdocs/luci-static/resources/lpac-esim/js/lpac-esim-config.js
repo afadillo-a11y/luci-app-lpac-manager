@@ -31,7 +31,6 @@ function loadConfig() {
 function populateConfig(cfg) {
     setVal('cfg-apdu-backend',  cfg.apdu_backend  || 'qmi');
     setVal('cfg-qmi-device',    cfg.qmi_device    || '/dev/cdc-wdm0');
-    setVal('cfg-qmi-slot',      cfg.qmi_sim_slot  || '1');
     setVal('cfg-sim-slot',      cfg.sim_slot      || '0');
     setVal('cfg-at-device',     cfg.at_device     || '/dev/ttyUSB3');
     setVal('cfg-mbim-device',   cfg.mbim_device   || '/dev/cdc-wdm0');
@@ -79,7 +78,6 @@ function saveConfig() {
     var cfg = {
         apdu_backend:  getVal('cfg-apdu-backend'),
         qmi_device:    getVal('cfg-qmi-device'),
-        qmi_sim_slot:  getVal('cfg-qmi-slot'),
         sim_slot:      getVal('cfg-sim-slot'),
         at_device:     getVal('cfg-at-device'),
         mbim_device:   getVal('cfg-mbim-device'),
@@ -90,12 +88,24 @@ function saveConfig() {
         at_debug:      getVal('cfg-at-debug')
     };
 
+    // Only send qmi_sim_slot if the field exists in the form
+    var qmiSlotEl = document.getElementById('cfg-qmi-slot');
+    if (qmiSlotEl && qmiSlotEl.value !== '') {
+        cfg.qmi_sim_slot = qmiSlotEl.value;
+    }
+
     apiPost('save_config', { config: JSON.stringify(cfg) })
         .then(function(data) {
             if (data && data.success) {
                 showConfigSuccess(data.message || 'Configuration saved');
+            } else if (data && data.error) {
+                showConfigError(data.error);
+            } else if (data && data.payload && data.payload.data && data.payload.data.msg) {
+                showConfigError(data.payload.data.msg);
+            } else if (data && data.payload && data.payload.message) {
+                showConfigError(data.payload.message);
             } else {
-                showConfigError(data && data.error ? data.error : 'Save failed');
+                showConfigError('Save failed');
             }
         })
         .catch(function(e) {

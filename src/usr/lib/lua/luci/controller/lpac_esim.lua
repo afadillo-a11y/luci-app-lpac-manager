@@ -363,6 +363,11 @@ function api_save_config()
         end
     end
 
+    -- Strip empty strings (frontend may send "" for missing form fields)
+    for k, v in pairs(sanitized) do
+        if v == "" then sanitized[k] = nil end
+    end
+
     -- Validate values
     local valid_backends = { qmi = true, at = true, mbim = true }
     if sanitized.apdu_backend and not valid_backends[sanitized.apdu_backend] then
@@ -538,7 +543,7 @@ end
 
 --- POST: Send AT command to serial port
 function api_at_cmd()
-    local at_cmd = http.formvalue("cmd") or "ATI"
+    local at_cmd = luci.http.formvalue("cmd") or "ATI"
     -- Sanitize: only allow printable ASCII, max 200 chars
     at_cmd = at_cmd:gsub("[^%w%s%+%-%=%?%^%$%*%#%%/%.,:;!@&()%[%]]", ""):sub(1, 200)
     local raw = exec_script("at-cmd " .. util.shellquote(at_cmd), 8)
