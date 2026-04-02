@@ -1,10 +1,11 @@
-/* lpac-esim-diagnostics.js — v1.3.4 */
+/* lpac-esim-diagnostics.js — v1.3.5 */
 'use strict';
 
 function loadRunlog() {
     var el = document.getElementById('diag-log');
     if (!el) return;
     el.textContent = 'Loading system check...';
+    var btn = document.getElementById('btn-runlog');
     apiGet('runlog')
         .then(function(data) {
             if (data && data.payload && data.payload.code === 0 && data.payload.data) {
@@ -12,6 +13,7 @@ function loadRunlog() {
             } else {
                 el.textContent = 'Failed to load system check.';
             }
+            if (btn) btn.value = '\u21bb System Check';
         })
         .catch(function(e) { el.textContent = 'Error: ' + (e.message || 'network'); });
 }
@@ -20,6 +22,7 @@ function loadSyslog() {
     var logDiv = document.getElementById('diag-log');
     if (!logDiv) return;
     logDiv.textContent = 'Loading...';
+    var btn = document.getElementById('btn-syslog');
 
     apiGet('syslog')
         .then(function(data) {
@@ -30,6 +33,7 @@ function loadSyslog() {
             } else {
                 logDiv.textContent = 'Failed to load log.';
             }
+            if (btn) btn.value = '\u21bb System Log';
         })
         .catch(function(e) {
             logDiv.textContent = 'Error: ' + (e.message || 'network error');

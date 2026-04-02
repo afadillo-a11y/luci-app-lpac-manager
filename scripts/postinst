@@ -1,5 +1,5 @@
 #!/bin/sh
-# postinst — luci-app-lpac-manager v1.3.4
+# postinst — luci-app-lpac-manager v1.3.5
 set +e
 
 echo "=============================================="
@@ -27,5 +27,5 @@ fi
 
 rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* >/dev/null 2>&1 || true
 
-logger -t lpac-esim "luci-app-lpac-manager v1.3.4 installed."
+logger -t lpac-esim "luci-app-lpac-manager v1.3.5 installed."
 exit 0

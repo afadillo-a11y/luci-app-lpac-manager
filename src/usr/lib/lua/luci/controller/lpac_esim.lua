@@ -1,6 +1,6 @@
 -- /usr/lib/lua/luci/controller/lpac_esim.lua
 -- LuCI controller for eSIM management via lpac-esim backend
--- Version: 1.3.4
+-- Version: 1.3.5
 -- License: GPL-2.0
 --
 -- Changelog:
@@ -370,9 +370,12 @@ function api_save_config()
         return
     end
     local valid_slots = { ["1"] = true, ["2"] = true }
+    local valid_sim_slots = { ["0"] = true, ["1"] = true }
     if sanitized.qmi_sim_slot and not valid_slots[sanitized.qmi_sim_slot] then
-        send_json({ success = false, error = "Invalid slot. Use: 1 or 2" })
-        return
+        return send_json(make_error("invalid_config", "Invalid QMI slot. Use: 1 or 2"))
+    end
+    if sanitized.sim_slot and not valid_sim_slots[sanitized.sim_slot] then
+        return send_json(make_error("invalid_config", "Invalid SIM slot. Use: 0 or 1"))
     end
     local valid_flags = { ["0"] = true, ["1"] = true }
     for _, fkey in ipairs({"apdu_debug", "http_debug", "at_debug", "mbim_proxy"}) do

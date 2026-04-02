@@ -1,4 +1,4 @@
-/* lpac-esim-download.js — v1.3.4 */
+/* lpac-esim-download.js — v1.3.5 */
 'use strict';
 
 var uploadedFile = null;

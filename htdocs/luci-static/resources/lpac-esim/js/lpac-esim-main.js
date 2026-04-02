@@ -1,4 +1,4 @@
-/* lpac-esim-main.js — v1.3.4 */
+/* lpac-esim-main.js — v1.3.5 */
 'use strict';
 
 var BASE_URL = L.env.scriptname + '/admin/modem/lpac-esim/';

@@ -1,7 +1,7 @@
 #!/bin/sh
 # lpac-esim — eSIM profile management for OpenWrt
 # BusyBox ash / POSIX shell
-# Version: 1.3.4
+# Version: 1.3.5
 # License: GPL-2.0
 #
 # Changelog:
@@ -1002,13 +1002,21 @@ api_syslog() {
         '{"type":"lpa","payload":{"code":0,"message":"success","data":{"log":$log}}}'
 }
 
-# GET runlog — backend initialization log (check_required_tools output)
+# GET runlog — backend initialization log + device enumeration
 api_runlog() {
     log=""
     if [ -f "$LOG_FILE" ]; then
         log="$(tail -c 16384 "$LOG_FILE" 2>/dev/null)"
     fi
-    "$JQ_BIN" -nc --arg log "$log" \
+    # Append live device enumeration
+    devinfo=""
+    devinfo="${devinfo}\n--- USB Devices ---\n$(lsusb 2>/dev/null || echo '(lsusb not available)')"
+    devinfo="${devinfo}\n--- TTY Ports ---\n$(ls -1 /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || echo '(none found)')"
+    devinfo="${devinfo}\n--- CDC Devices ---\n$(ls -1 /dev/cdc-wdm* /dev/wwan* 2>/dev/null || echo '(none found)')"
+    devinfo="${devinfo}\n--- Network Interfaces ---\n$(ls -1 /sys/class/net/ 2>/dev/null | grep -E 'wwan|usb|mbim' || echo '(none found)')"
+    log="${log}\n\n$(printf '%s' "$devinfo")"
+
+    "$JQ_BIN" -nc --arg log "$(printf '%b' "$log")" \
         '{"type":"lpa","payload":{"code":0,"message":"success","data":{"log":$log}}}'
 }
 
@@ -1019,7 +1027,7 @@ api_version() {
         lpac_ver="$($LPAC_BIN version 2>/dev/null | "$JQ_BIN" -r '.payload.data // "unknown"' 2>/dev/null)"
     fi
     [ -z "$lpac_ver" ] && lpac_ver="missing"
-    local script_ver="1.3.4"
+    local script_ver="1.3.5"
     local be="${BACKEND:-unknown}"
     local dev=""
     case "$be" in
@@ -1054,36 +1062,41 @@ api_at_cmd() {
     # Sanitize command — allow only printable ASCII, strip dangerous chars
     cmd="$(printf '%s' "$cmd" | tr -d '\000-\010\013\014\016-\037\177' | head -c 200)"
 
-    # Configure port and send command
-    local resp=""
-    resp="$(
-        {
-            stty -F "$port" 115200 raw -echo -echoe -echok 2>/dev/null
-            # Flush input buffer
-            cat < "$port" > /dev/null &
-            local flush_pid=$!
-            sleep 0.1
-            kill "$flush_pid" 2>/dev/null
-            kill -9 "$flush_pid" 2>/dev/null
-            wait "$flush_pid" 2>/dev/null
-            # Send command
-            printf '%s\r' "$cmd" > "$port"
-            # Read response with timeout (fallback if no timeout binary)
-            if command -v timeout >/dev/null 2>&1; then
-                timeout 3 cat < "$port" 2>/dev/null
-            else
-                cat < "$port" 2>/dev/null &
-                _cat_pid=$!
-                sleep 3
-                kill "$_cat_pid" 2>/dev/null
-                kill -9 "$_cat_pid" 2>/dev/null
-                wait "$_cat_pid" 2>/dev/null
-            fi
-        } 2>/dev/null
-    )"
+    local resp="" tmpfile="${TMP_DIR}/at_resp.tmp"
 
-    # Clean up response: remove echo of command, CR, trailing blanks
-    resp="$(printf '%s' "$resp" | tr '\r' '\n' | sed '/^$/d' | sed "1{/^${cmd}$/d;}" )"
+    # Method 1: Try microcom if available (best for serial)
+    if command -v microcom >/dev/null 2>&1; then
+        resp="$(printf '%s\r\n' "$cmd" | microcom -t 3000 "$port" 2>/dev/null)"
+    else
+        # Method 2: Raw shell — works without stty/microcom
+        # Set port speed via shell escape if stty available, otherwise skip
+        command -v stty >/dev/null 2>&1 && stty -F "$port" 115200 raw -echo 2>/dev/null
+
+        : > "$tmpfile"
+        # Background reader
+        cat < "$port" > "$tmpfile" 2>/dev/null &
+        local reader_pid=$!
+
+        # Small delay for reader to attach
+        sleep 0.2
+
+        # Send command
+        printf '%s\r' "$cmd" > "$port" 2>/dev/null
+
+        # Wait for response
+        sleep 2
+
+        # Kill reader
+        kill "$reader_pid" 2>/dev/null
+        kill -9 "$reader_pid" 2>/dev/null
+        wait "$reader_pid" 2>/dev/null
+
+        resp="$(cat "$tmpfile" 2>/dev/null)"
+        rm -f "$tmpfile"
+    fi
+
+    # Clean up response: remove echo of command, CR, blank lines
+    resp="$(printf '%s' "$resp" | tr '\r' '\n' | sed '/^$/d' | grep -v "^${cmd}$" )"
 
     local at_code=0 at_msg="success"
     if [ -z "$resp" ]; then
