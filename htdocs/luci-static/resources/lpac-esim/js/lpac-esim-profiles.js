@@ -1,4 +1,4 @@
-/* lpac-esim-profiles.js — v1.3.3 */
+/* lpac-esim-profiles.js — v1.3.4 */
 'use strict';
 
 function loadProfiles() {
@@ -109,6 +109,16 @@ function renderProfiles(profiles) {
             activeSpan.textContent = 'Active';
             activeSpan.style.marginRight = '5px';
             tdActions.appendChild(activeSpan);
+
+            var disableBtn = document.createElement('button');
+            disableBtn.type = 'button';
+            disableBtn.className = 'cbi-button';
+            disableBtn.textContent = 'Disable';
+            disableBtn.style.marginRight = '5px';
+            disableBtn.onclick = (function(iccid, name) {
+                return function() { disableProfile(iccid, name); };
+            })(p.iccid, p.profileName || p.serviceProviderName);
+            tdActions.appendChild(disableBtn);
         }
 
         var renBtn = document.createElement('button');
@@ -303,3 +313,31 @@ function showProfilesErrorMsg(msg) {
 }
 
 // Loaded by showTab() on first tab activation
+
+function disableProfile(iccid, name) {
+    if (!confirm('Disable profile "' + (name || iccid) + '"?\n\nWarning: The modem will lose network connection until another profile is enabled or switched.')) {
+        return;
+    }
+    clearProfileStatus();
+    showProfileSuccess('Disabling profile...');
+
+    apiPost('switch', { iccid: iccid })
+        .then(function(data) {
+            if (data && data.payload && data.payload.data && data.payload.data.status) {
+                showProfileSuccess('Profile disable initiated. Modem is rebooting...');
+                startLockPolling(function(result) {
+                    if (result && result.status === 'success') {
+                        showProfileSuccess(result.message || 'Profile disabled.');
+                    } else if (result && result.status === 'error') {
+                        showProfileError(result.message || 'Disable failed.');
+                    }
+                    loadProfiles();
+                });
+            } else if (data && data.payload) {
+                showProfileError('Disable failed: ' + (data.payload.message || 'Unknown'));
+            }
+        })
+        .catch(function(e) {
+            showProfileError(e.message || 'Failed to disable profile');
+        });
+}

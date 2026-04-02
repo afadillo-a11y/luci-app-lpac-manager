@@ -1,7 +1,7 @@
 #!/bin/sh
 # lpac-esim — eSIM profile management for OpenWrt
 # BusyBox ash / POSIX shell
-# Version: 1.3.3
+# Version: 1.3.4
 # License: GPL-2.0
 #
 # Changelog:
@@ -132,11 +132,11 @@ parse_args() {
             --no-color)       NO_COLOR=1 ;;
             --api)            API_MODE=1; NONINTERACTIVE=1; QUIET=1; NO_COLOR=1 ;;
             --non-interactive) NONINTERACTIVE=1 ;;
-            doctor|status|chip|profiles|notif-clear|notif-list|notif-process|modem-status|select-devices|reboot-modem|lock-status|syslog|soft-reset|usb-reset|uicc-reset|runlog|version|at-cmd)
+            doctor|status|chip|profiles|notif-clear|notif-list|notif-process|modem-status|select-devices|reboot-modem|lock-status|soft-reset|usb-reset|uicc-reset|runlog|version)
                               COMMAND="$1" ;;
             enable|disable|switch)
                               COMMAND="$1"; shift; COMMAND_ARG="$1" ;;
-            delete|nickname)
+            delete|nickname|at-cmd|syslog)
                               COMMAND="$1"; shift; COMMAND_ARG="$1" ;;
             download)
                               COMMAND="$1" ;;
@@ -997,7 +997,7 @@ api_notif_process() {
 # GET syslog — filtered log entries for diagnostics
 api_syslog() {
     lines="${1:-100}"
-    log="$(logread 2>/dev/null | grep -i 'lpac-esim\|lpac\|modem\|ModemManager\|netifd.*modem\|qmi\|mbim\|usb.*1-1' | tail -n "$lines")"
+    log="$(logread 2>/dev/null | grep -i 'lpac-esim\|lpac\|modem\|ModemManager\|netifd.*modem\|qmi\|mbim\|usb.*[0-9]-[0-9]' | tail -n "$lines")"
     "$JQ_BIN" -nc --arg log "$log" \
         '{"type":"lpa","payload":{"code":0,"message":"success","data":{"log":$log}}}'
 }
@@ -1006,7 +1006,7 @@ api_syslog() {
 api_runlog() {
     log=""
     if [ -f "$LOG_FILE" ]; then
-        log="$(cat "$LOG_FILE" 2>/dev/null)"
+        log="$(tail -c 16384 "$LOG_FILE" 2>/dev/null)"
     fi
     "$JQ_BIN" -nc --arg log "$log" \
         '{"type":"lpa","payload":{"code":0,"message":"success","data":{"log":$log}}}'
@@ -1015,9 +1015,11 @@ api_runlog() {
 # GET version — package and component versions
 api_version() {
     local lpac_ver=""
-    lpac_ver="$($LPAC_BIN version 2>/dev/null | "$JQ_BIN" -r '.payload.data // "unknown"' 2>/dev/null)"
-    [ -z "$lpac_ver" ] && lpac_ver="unknown"
-    local script_ver="1.3.3"
+    if [ -n "$LPAC_BIN" ]; then
+        lpac_ver="$($LPAC_BIN version 2>/dev/null | "$JQ_BIN" -r '.payload.data // "unknown"' 2>/dev/null)"
+    fi
+    [ -z "$lpac_ver" ] && lpac_ver="missing"
+    local script_ver="1.3.4"
     local be="${BACKEND:-unknown}"
     local dev=""
     case "$be" in
@@ -1083,11 +1085,18 @@ api_at_cmd() {
     # Clean up response: remove echo of command, CR, trailing blanks
     resp="$(printf '%s' "$resp" | tr '\r' '\n' | sed '/^$/d' | sed "1{/^${cmd}$/d;}" )"
 
+    local at_code=0 at_msg="success"
+    if [ -z "$resp" ]; then
+        at_code=-1; at_msg="no_response"
+    fi
+
     "$JQ_BIN" -nc \
+        --argjson code "$at_code" \
+        --arg msg "$at_msg" \
         --arg cmd "$cmd" \
-        --arg resp "$resp" \
+        --arg resp "${resp:-(no response from modem)}" \
         --arg port "$port" \
-        '{"type":"lpa","payload":{"code":0,"message":"success","data":{"command":$cmd,"response":$resp,"port":$port}}}'
+        '{"type":"lpa","payload":{"code":$code,"message":$msg,"data":{"command":$cmd,"response":$resp,"port":$port}}}'
 }
 
 # POST soft-reset — QMI DMS offline+online (no USB re-enum)

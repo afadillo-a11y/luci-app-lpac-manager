@@ -1,4 +1,4 @@
-/* lpac-esim-info.js — v1.3.3 */
+/* lpac-esim-info.js — v1.3.4 */
 'use strict';
 
 function loadESIMInfo() {

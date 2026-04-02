@@ -1,4 +1,4 @@
-/* lpac-esim-config.js — v1.3.3 */
+/* lpac-esim-config.js — v1.3.4 */
 'use strict';
 
 function loadConfig() {
@@ -56,7 +56,7 @@ function onBackendChange() {
     var backend = getVal('cfg-apdu-backend');
 
     // Show/hide device rows based on backend
-    var qmiRows  = ['cfg-qmi-device-row', 'cfg-qmi-slot-row'];
+    var qmiRows  = ['cfg-qmi-device-row'];
     var mbimRows = ['cfg-mbim-device-row', 'cfg-mbim-proxy-row'];
 
     qmiRows.forEach(function(id) {

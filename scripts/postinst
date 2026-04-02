@@ -1,5 +1,5 @@
 #!/bin/sh
-# postinst — luci-app-lpac-manager v1.3.3
+# postinst — luci-app-lpac-manager v1.3.4
 set +e
 
 echo "=============================================="
@@ -17,11 +17,15 @@ echo "=============================================="
 
 chmod +x /usr/bin/lpac-esim 2>/dev/null || true
 
+# Fix directory permissions (opkg/nfpm may strip them)
+chmod 755 /usr/share/luci/menu.d 2>/dev/null || true
+chmod 755 /usr/share/rpcd/acl.d 2>/dev/null || true
+
 if [ -x /etc/init.d/rpcd ]; then
     /etc/init.d/rpcd reload >/dev/null 2>&1 || true
 fi
 
 rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* >/dev/null 2>&1 || true
 
-logger -t lpac-esim "luci-app-lpac-manager v1.3.3 installed."
+logger -t lpac-esim "luci-app-lpac-manager v1.3.4 installed."
 exit 0

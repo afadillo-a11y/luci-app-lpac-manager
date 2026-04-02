@@ -1,6 +1,6 @@
 -- /usr/lib/lua/luci/controller/lpac_esim.lua
 -- LuCI controller for eSIM management via lpac-esim backend
--- Version: 1.3.3
+-- Version: 1.3.4
 -- License: GPL-2.0
 --
 -- Changelog:

@@ -1,4 +1,4 @@
-/* lpac-esim-notifications.js — v1.3.3 */
+/* lpac-esim-notifications.js — v1.3.4 */
 'use strict';
 
 function loadNotifications() {
