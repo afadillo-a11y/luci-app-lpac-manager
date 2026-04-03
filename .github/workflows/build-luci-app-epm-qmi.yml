@@ -12,11 +12,16 @@ on:
         default: '1.3.5'
 
 jobs:
-  release:
-    name: Build IPK and Alpine APK
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  build:
+    name: Build ${{ matrix.target.ext }} packages
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { sdk: "aarch64_cortex-a53-24.10.5", ext: "ipk" }
+          - { sdk: "aarch64_cortex-a53-25.12.2", ext: "apk" }
+
     env:
       PKG_NAME: luci-app-lpac-manager
 
@@ -36,19 +41,13 @@ jobs:
             echo "VERSION=nightly" >> "$GITHUB_ENV"
           fi
 
-      - name: Install nFPM and helpers
+      - name: Install helpers
         shell: bash
         run: |
-          set -euxo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y dos2unix curl tar jq rsync file
+          sudo apt-get install -y dos2unix jq rsync
 
-          # Install nFPM for IPK support
-          NFPM_VER="2.46.0"
-          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VER}/nfpm_${NFPM_VER}_Linux_x86_64.tar.gz" | tar -xz nfpm
-          sudo install -m 0755 nfpm /usr/local/bin/nfpm
-
-      - name: Assemble pkgroot from source tree
+      - name: Assemble pkgroot (Files & Cleanup)
         shell: bash
         run: |
           set -euxo pipefail
@@ -58,178 +57,159 @@ jobs:
           rm -rf "${PKGROOT}"
           mkdir -p "${PKGROOT}"
 
-          # 1. Copy source files
-          if [ -d "${REPO_ROOT}/src/usr/lib/lua/luci" ]; then
-            mkdir -p "${PKGROOT}/usr/lib/lua/luci"
-            rsync -a "${REPO_ROOT}/src/usr/lib/lua/luci/" "${PKGROOT}/usr/lib/lua/luci/"
-          fi
+          # Copy LuCI files
+          [ -d "${REPO_ROOT}/src/usr" ] && cp -a "${REPO_ROOT}/src/usr" "${PKGROOT}/"
+          [ -d "${REPO_ROOT}/root" ] && cp -a "${REPO_ROOT}/root/." "${PKGROOT}/"
+          [ -d "${REPO_ROOT}/htdocs" ] && mkdir -p "${PKGROOT}/www" && cp -a "${REPO_ROOT}/htdocs/." "${PKGROOT}/www/"
 
-          if [ -d "${REPO_ROOT}/src/usr/bin" ]; then
-            mkdir -p "${PKGROOT}/usr/bin"
-            rsync -a "${REPO_ROOT}/src/usr/bin/" "${PKGROOT}/usr/bin/"
-          fi
-
-          if [ -d "${REPO_ROOT}/htdocs/luci-static/resources" ]; then
-            mkdir -p "${PKGROOT}/www/luci-static/resources"
-            rsync -a "${REPO_ROOT}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
-          fi
-
-          if [ -d "${REPO_ROOT}/root" ]; then
-            rsync -a "${REPO_ROOT}/root/" "${PKGROOT}/"
-          fi
-
-          # 2. Normalize menu paths
+          # Normalize menu paths
           mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
           if [ -d "${PKGROOT}/usr/share/menu.d" ]; then
-            rsync -a "${PKGROOT}/usr/share/menu.d/" "${PKGROOT}/usr/share/luci/menu.d/"
+            cp -a "${PKGROOT}/usr/share/menu.d/." "${PKGROOT}/usr/share/luci/menu.d/"
             rm -rf "${PKGROOT}/usr/share/menu.d"
           fi
 
-          # 3. Handle UCI config
-          mkdir -p "${PKGROOT}/etc/config"
-          if [ -f "${REPO_ROOT}/etc/config/lpac-esim" ]; then
-            cp "${REPO_ROOT}/etc/config/lpac-esim" "${PKGROOT}/etc/config/lpac-esim"
-          fi
+          # CLEANUP: Remove Windows CRLF and BOM (Critical for rpcd)
+          find "${PKGROOT}" -type f \( -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \) -exec dos2unix {} +
+          find "${PKGROOT}" -type f \( -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \) -exec sed -i '1s/^\xef\xbb\xbf//' {} +
 
-          # 4. CLEANUP: Remove Windows CRLF and BOM (Critical for rpcd)
-          find "${PKGROOT}" -type f \( \
-            -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \
-            -o -name '*.css' -o -path '*/etc/config/*' -o -path '*/usr/bin/*' \
-          \) -exec dos2unix {} +
-
-          find "${PKGROOT}" -type f \( \
-            -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \
-          \) -exec sed -i '1s/^\xef\xbb\xbf//' {} +
-
-          # 5. VALIDATE: Check JSON syntax before packaging
-          echo "Validating JSON files..."
+          # VALIDATE JSON
           find "${PKGROOT}" -type f -name "*.json" -exec sh -c 'cat "{}" | jq . > /dev/null || (echo "Syntax error in JSON: {}" && exit 1)' \;
 
-          # 6. Set permissions
+          # Permissions
           find "${PKGROOT}/usr/bin" -type f -exec chmod 0755 {} \; 2>/dev/null || true
-          if [ -d "${REPO_ROOT}/scripts" ]; then chmod +x "${REPO_ROOT}/scripts/"*; fi
 
-      - name: Build IPK with nFPM
+      - name: Prepare OpenWrt feed & Makefile
         shell: bash
         run: |
           set -euxo pipefail
-          export PKG_VER="${{ env.VERSION }}"
-          export SOURCE_DATE_EPOCH=1704067200
+          mkdir -p openwrt-feed/luci-app-lpac-manager
+          mkdir -p .github/openwrt-helper
 
-          cat > nfpm.yaml <<EOF
-          name: "luci-app-lpac-manager"
-          platform: "linux"
-          arch: "all"
-          version: "${PKG_VER}"
-          section: "net"
-          maintainer: "Medvedolog <Medvedolog@github.com>"
-          description: |
-            eSIM profile management for OpenWrt.
-          depends:
-            - luci-base
-            - jq
-          contents:
-            - src: ./pkgroot/usr
-              dst: /usr
-              type: tree
-            - src: ./pkgroot/www
-              dst: /www
-              type: tree
-            - src: ./pkgroot/etc
-              dst: /etc
-              type: tree
-          scripts:
-            postinstall: ./scripts/postinst
-            preremove: ./scripts/prerm
-          EOF
+          # Copy assembled files to feed directory
+          cp -a pkgroot openwrt-feed/luci-app-lpac-manager/
 
-          nfpm package --config nfpm.yaml --packager ipk --target "${PKG_NAME}_${PKG_VER}_all.ipk"
+          cat > openwrt-feed/luci-app-lpac-manager/Makefile <<'EOF'
+          include $(TOPDIR)/rules.mk
 
-      - name: Build APK via Alpine abuild
-        shell: bash
-        run: |
-          set -euxo pipefail
-          export PKG_VER="${{ env.VERSION }}"
-          export APK_DIR="${GITHUB_WORKSPACE}/packaging/apk"
-          
-          mkdir -p "${APK_DIR}"
-          cp -a "${GITHUB_WORKSPACE}/pkgroot" "${APK_DIR}/"
+          PKG_NAME:=luci-app-lpac-manager
+          PKG_VERSION:=$(PKG_VER)
+          PKG_RELEASE:=1
+          PKG_MAINTAINER:=Medvedolog <Medvedolog@github.com>
 
-          cat > "${APK_DIR}/APKBUILD" <<EOF
-          # Maintainer: Medvedolog <Medvedolog@github.com>
-          pkgname="luci-app-lpac-manager"
-          pkgver="${PKG_VER}"
-          pkgrel=1
-          pkgdesc="eSIM profile management for OpenWrt"
-          url="https://github.com/Medvedolog/lpac-esim-openwrt"
-          arch="noarch"
-          license="MIT"
-          depends="luci-base jq"
-          install="\$pkgname.post-install \$pkgname.pre-deinstall"
-          options="!check !tracedeps"
+          include $(INCLUDE_DIR)/package.mk
 
-          package() {
-              mkdir -p "\$pkgdir"
-              cp -a "\$startdir"/pkgroot/* "\$pkgdir"/
+          define Package/luci-app-lpac-manager
+            SECTION:=luci
+            CATEGORY:=LuCI
+            SUBMENU:=3. Applications
+            TITLE:=eSIM profile management for OpenWrt
+            DEPENDS:=+luci-base +jq
+            PKGARCH:=all
+          endef
+
+          define Package/luci-app-lpac-manager/description
+            LuCI web UI and lpac-esim backend for managing eSIM profiles.
+          endef
+
+          define Build/Compile
+          endef
+
+          define Package/luci-app-lpac-manager/install
+          	$(INSTALL_DIR) $(1)/
+          	cp -a ./pkgroot/* $(1)/
+          endef
+
+          define Package/luci-app-lpac-manager/postinst
+          #!/bin/sh
+          [ -n "$${IPKG_INSTROOT}" ] || {
+              rm -f /tmp/luci-indexcache /tmp/luci-modulecache
+              /etc/init.d/rpcd restart
           }
+          exit 0
+          endef
+
+          $(eval $(call BuildPackage,luci-app-lpac-manager))
           EOF
 
-          if [ ! -f "${APK_DIR}/luci-app-lpac-manager.post-install" ]; then
-            echo -e "#!/bin/sh\nexit 0" > "${APK_DIR}/luci-app-lpac-manager.post-install"
-          fi
+          # Replace @ with TAB in Makefile (just in case)
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("openwrt-feed/luci-app-lpac-manager/Makefile")
+          text = p.read_text()
+          text = "\n".join(("\t" + line[1:]) if line.startswith("@") else line for line in text.splitlines()) + "\n"
+          p.write_text(text)
+          PY
 
-          if [ ! -f "${APK_DIR}/luci-app-lpac-manager.pre-deinstall" ]; then
-            echo -e "#!/bin/sh\nexit 0" > "${APK_DIR}/luci-app-lpac-manager.pre-deinstall"
-          fi
+          cat > .github/openwrt-helper/build.sh <<'EOF'
+          #!/bin/bash
+          set -euxo pipefail
+          cd /builder
+          [ ! -d ./scripts ] && ./setup.sh
 
-          docker run --rm -v "${APK_DIR}:/work" -w /work alpine:edge sh -c "
-            apk add --no-cache alpine-sdk sudo
-            adduser -D -G abuild builder
-            echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-            chown -R builder:abuild /work
-            su builder -c 'abuild-keygen -a -i -n'
-            su builder -c 'REPODEST=/work/out abuild -d'
-            APK_FILE=\$(find /work/out -type f -name \"*.apk\" ! -name \"APKINDEX*\" | head -n1)
-            cp \"\$APK_FILE\" \"/work/${PKG_NAME}-${PKG_VER}-r1_noarch.apk\"
-          "
+          echo "src-link custom /work/openwrt-feed" >> feeds.conf.default
+          ./scripts/feeds update custom
+          ./scripts/feeds install -p custom luci-app-lpac-manager
 
-          sudo chown -R $(id -u):$(id -g) "${APK_DIR}"
-          mv "${APK_DIR}"/*_noarch.apk ./
+          cat >> .config <<'CFG'
+          CONFIG_PACKAGE_luci-app-lpac-manager=y
+          CFG
+
+          make defconfig
+          make package/feeds/custom/luci-app-lpac-manager/compile V=s -j"$(nproc)"
+
+          mkdir -p /work/dist
+          find bin/ -type f \( -name "luci-app-lpac-manager_*.ipk" -o -name "luci-app-lpac-manager-*.apk" \) -exec cp -v {} /work/dist/ \;
+          EOF
+          chmod +x .github/openwrt-helper/build.sh
+
+      - name: Build in OpenWrt SDK
+        env:
+          PKG_VER: ${{ env.VERSION }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker pull openwrt/sdk:${{ matrix.target.sdk }}
+          docker run --rm \
+            --user root \
+            -e PKG_VER="${PKG_VER}" \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /builder \
+            openwrt/sdk:${{ matrix.target.sdk }} \
+            /bin/bash /work/.github/openwrt-helper/build.sh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PKG_NAME }}-${{ env.VERSION }}
-          path: |
-            *.ipk
-            *.apk
+          name: luci-app-lpac-manager-${{ matrix.target.ext }}
+          path: dist/*
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          files: |
-            *.ipk
-            *.apk
-          name: "Release ${{ env.VERSION }}"
-          tag_name: "v${{ env.VERSION }}"
-          prerelease: false
+          tag_name: ${{ github.event.inputs.build_target || github.ref_name }}
+          name: "Release ${{ github.event.inputs.build_target || github.ref_name }}"
           draft: false
+          prerelease: false
+          files: release-assets/*
           body: |
-            ## luci-app-lpac-manager ${{ env.VERSION }}
-
-            eSIM management package for OpenWrt.
-
-            ### Artifacts
-            - `${{ env.PKG_NAME }}_${{ env.VERSION }}_all.ipk` for OpenWrt 24.x / opkg
-            - `${{ env.PKG_NAME }}-${{ env.VERSION }}-r1_noarch.apk` for OpenWrt 25.12+ / apk (Alpine v3 ADB format)
-
-            ### Install
-            ```sh
-            # OpenWrt 24.x
-            opkg update
-            opkg install luci-app-lpac-manager_${{ env.VERSION }}_all.ipk
-
-            # OpenWrt 25.12+
-            apk add --allow-untrusted luci-app-lpac-manager-${{ env.VERSION }}-r1_noarch.apk
-            ```
+            ## luci-app-lpac-manager ${{ github.event.inputs.build_target || github.ref_name }}
+            
+            Native OpenWrt packages built via official SDK.
+            
+            - **`*.ipk`** — for OpenWrt 24.x
+            - **`*.apk`** — for OpenWrt 25.12+
