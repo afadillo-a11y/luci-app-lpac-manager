@@ -1,11 +1,3 @@
-# .github/workflows/build.yml — luci-app-lpac-manager v1.3.0
-# Unified build: lpac wrapper + lpac-esim backend + LuCI WebUI → IPK + APK
-#
-# Changelog:
-#   1.3.0 - Renamed: package → luci-app-lpac-manager, script → lpac-esim
-#           Tag trigger v*, wrapper rename lpac-wrapper.sh → lpac
-#   1.2.2 - Initial build workflow
-
 name: Build and Release luci-app-lpac-manager
 
 on:
@@ -15,13 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       build_target:
-        description: 'Package version (e.g. 1.3.0)'
+        description: 'Package version (e.g. 1.3.5)'
         required: true
-        default: '1.3.0'
+        default: '1.3.5'
 
 jobs:
   release:
-    name: Build and Release
+    name: Build IPK and Alpine APK
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -29,6 +21,9 @@ jobs:
       PKG_NAME: luci-app-lpac-manager
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Extract version
         shell: bash
         run: |
@@ -48,14 +43,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y dos2unix curl tar jq rsync file
 
-          # Pin nFPM to v2.35.0 to fix OpenWrt apk-tools 'v2 package format error'
+          # Pin nFPM version for consistent IPK builds
           NFPM_VER="2.35.0"
-          echo "Installing nFPM ${NFPM_VER}"
           curl -fsSL \
             "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VER}/nfpm_${NFPM_VER}_Linux_x86_64.tar.gz" \
             | tar -xz nfpm
           sudo install -m 0755 nfpm /usr/local/bin/nfpm
-          nfpm --version
 
       - name: Assemble pkgroot from source tree
         shell: bash
@@ -65,36 +58,32 @@ jobs:
           REPO_ROOT="${GITHUB_WORKSPACE}"
           PKGROOT="${GITHUB_WORKSPACE}/pkgroot"
 
-          # Validate source layout
-          test -d "${REPO_ROOT}/src/usr/lib/lua/luci"
-          test -d "${REPO_ROOT}/htdocs"
-          test -d "${REPO_ROOT}/etc/config"
-          test -f "${REPO_ROOT}/nfpm.yaml"
+          # Fix executable permissions (critical if committed from Windows)
+          [ -d "${REPO_ROOT}/scripts" ] && chmod +x "${REPO_ROOT}/scripts/"* || true
+          [ -d "${REPO_ROOT}/packaging/apk" ] && chmod +x "${REPO_ROOT}/packaging/apk/"* || true
 
           rm -rf "${PKGROOT}"
           mkdir -p "${PKGROOT}"
 
           # 1) Lua controller + views
-          mkdir -p "${PKGROOT}/usr/lib/lua/luci"
-          rsync -a "${REPO_ROOT}/src/usr/lib/lua/luci/" "${PKGROOT}/usr/lib/lua/luci/"
+          [ -d "${REPO_ROOT}/src/usr/lib/lua/luci" ] && \
+            mkdir -p "${PKGROOT}/usr/lib/lua/luci" && \
+            rsync -a "${REPO_ROOT}/src/usr/lib/lua/luci/" "${PKGROOT}/usr/lib/lua/luci/"
 
-          # 2) Backend shell scripts (lpac-esim + lpac wrapper)
-          if [ -d "${REPO_ROOT}/src/usr/bin" ]; then
-            mkdir -p "${PKGROOT}/usr/bin"
-            rsync -a "${REPO_ROOT}/src/usr/bin/" "${PKGROOT}/usr/bin/"
+          # 2) Backend shell script
+          [ -d "${REPO_ROOT}/src/usr/bin" ] && \
+            mkdir -p "${PKGROOT}/usr/bin" && \
+            rsync -a "${REPO_ROOT}/src/usr/bin/" "${PKGROOT}/usr/bin/" && \
             find "${PKGROOT}/usr/bin" -type f -exec chmod 0755 {} \;
-          fi
 
           # 3) Static web resources (JS, CSS)
-          if [ -d "${REPO_ROOT}/htdocs/luci-static/resources" ]; then
-            mkdir -p "${PKGROOT}/www/luci-static/resources"
+          [ -d "${REPO_ROOT}/htdocs/luci-static/resources" ] && \
+            mkdir -p "${PKGROOT}/www/luci-static/resources" && \
             rsync -a "${REPO_ROOT}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
-          fi
 
           # 4) Root overlay (menu.d, acl.d)
-          if [ -d "${REPO_ROOT}/root" ]; then
+          [ -d "${REPO_ROOT}/root" ] && \
             rsync -a "${REPO_ROOT}/root/" "${PKGROOT}/"
-          fi
 
           # 5) Normalize legacy menu path
           mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
@@ -105,28 +94,20 @@ jobs:
 
           # 6) UCI config
           mkdir -p "${PKGROOT}/etc/config"
-          if [ -f "${REPO_ROOT}/etc/config/lpac-esim" ]; then
+          [ -f "${REPO_ROOT}/etc/config/lpac-esim" ] && \
             cp "${REPO_ROOT}/etc/config/lpac-esim" "${PKGROOT}/etc/config/lpac-esim"
-          fi
 
-          # 7) Rename wrapper lpac-wrapper.sh → lpac (if not already)
-          if [ -f "${PKGROOT}/usr/bin/lpac-wrapper.sh" ] && [ ! -f "${PKGROOT}/usr/bin/lpac" ]; then
-            mv "${PKGROOT}/usr/bin/lpac-wrapper.sh" "${PKGROOT}/usr/bin/lpac"
-            chmod 0755 "${PKGROOT}/usr/bin/lpac"
-          fi
-
-          # 8) Normalize line endings
+          # 7) Normalize line endings and strip BOM
           find "${PKGROOT}" -type f \( \
             -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \
             -o -name '*.css' -o -path '*/etc/config/*' -o -path '*/usr/bin/*' \
           \) -print0 | xargs -0 -r dos2unix
 
-          # 9) Strip UTF-8 BOM
           find "${PKGROOT}" -type f \( \
             -name '*.lua' -o -name '*.js' -o -name '*.htm' -o -path '*/usr/bin/*' \
           \) -print0 | xargs -0 -r sed -i '1s/^\xef\xbb\xbf//'
 
-          # 10) Sanity checks
+          # 8) Sanity checks
           echo "=== pkgroot contents ==="
           find "${PKGROOT}" -maxdepth 8 -type f | sort
 
@@ -136,14 +117,12 @@ jobs:
           test -f "${PKGROOT}/usr/share/luci/menu.d/luci-app-lpac-esim.json"
           test -f "${PKGROOT}/usr/share/rpcd/acl.d/luci-app-lpac-esim.json"
           test -f "${PKGROOT}/usr/bin/lpac-esim"
-          test -f "${PKGROOT}/usr/bin/lpac"
           echo "All sanity checks passed."
 
-      - name: Build IPK and APK packages
+      - name: Build IPK with nFPM
         shell: bash
         run: |
           set -euxo pipefail
-
           export PKG_VER="${{ env.VERSION }}"
           export SOURCE_DATE_EPOCH=1704067200
 
@@ -151,17 +130,63 @@ jobs:
             --config nfpm.yaml \
             --packager ipk \
             --target "${PKG_NAME}_${PKG_VER}_all.ipk"
-          echo "Built: ${PKG_NAME}_${PKG_VER}_all.ipk"
 
-          unset SOURCE_DATE_EPOCH
-          nfpm package \
-            --config nfpm.yaml \
-            --packager apk \
-            --target "${PKG_NAME}_${PKG_VER}_noarch.apk"
-          echo "Built: ${PKG_NAME}_${PKG_VER}_noarch.apk"
+          ls -lh "${PKG_NAME}_${PKG_VER}_all.ipk"
 
-          ls -lh "${PKG_NAME}"_*
-          sha256sum "${PKG_NAME}"_* || true
+      - name: Build APK via Alpine abuild
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PKG_VER="${{ env.VERSION }}"
+          export APK_DIR="${GITHUB_WORKSPACE}/packaging/apk"
+
+          mkdir -p "${APK_DIR}"
+
+          # Pass assembled pkgroot into Alpine build directory
+          cp -a "${GITHUB_WORKSPACE}/pkgroot" "${APK_DIR}/"
+
+          # Generate APKBUILD (no leading whitespace in heredoc)
+          cat > "${APK_DIR}/APKBUILD" <<APKEOF
+# Contributor: Medvedolog <Medvedolog@github.com>
+# Maintainer: Medvedolog <Medvedolog@github.com>
+pkgname="luci-app-lpac-manager"
+pkgver="${PKG_VER}"
+pkgrel=1
+pkgdesc="eSIM profile management for OpenWrt"
+url="https://github.com/Medvedolog/lpac-esim-openwrt"
+arch="noarch"
+license="MIT"
+depends="luci-base jq"
+install="\$pkgname.post-install \$pkgname.pre-deinstall"
+source=""
+
+build() {
+    return 0
+}
+
+package() {
+    mkdir -p "\$pkgdir"
+    cp -a "\$builddir"/pkgroot/* "\$pkgdir"/
+}
+APKEOF
+
+          # Build inside Alpine container
+          docker run --rm \
+            -v "${APK_DIR}:/work" \
+            -w /work \
+            alpine:edge \
+            sh -c "
+              apk add --no-cache alpine-sdk sudo
+              adduser -D -G abuild builder
+              chown -R builder:abuild /work
+              su builder -c 'abuild-keygen -a -i -n'
+              su builder -c 'REPODEST=/work/out abuild -r'
+              APK_FILE=\$(find /work/out -type f -name '*.apk' ! -name 'APKINDEX*' | head -n1)
+              cp \"\$APK_FILE\" \"/work/${PKG_NAME}-${PKG_VER}-r1_noarch.apk\"
+            "
+
+          mv "${APK_DIR}"/*_noarch.apk ./
+          ls -lh *.apk
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
@@ -185,32 +210,18 @@ jobs:
           body: |
             ## luci-app-lpac-manager ${{ env.VERSION }}
 
-            Unified eSIM management package for OpenWrt.
-            **Architecture: all/noarch** — works on any OpenWrt target.
-
-            ### Includes
-            - `/usr/bin/lpac` — environment wrapper for lpac binary
-            - `/usr/bin/lpac-esim` — backend script (interactive + API mode)
-            - LuCI web UI at **Modem → eSIM Manager**
-
-            ### Features
-            - Profile list / switch / download / delete / rename
-            - QMI, AT, and MBIM backend support
-            - Diagnostics: syslog viewer, soft/USB/SIM/hard reset
-            - Async operations with real success/error reporting
-
-            ### Dependencies (separate packages)
-            - `luci-base`, `jq`
-            - `lpac` 2.3.0+ (arch-specific)
-            - QMI: `libqmi`, `qmi-utils`
-            - MBIM: `libmbim`, `mbim-utils` (optional)
+            eSIM profile management for OpenWrt via lpac 2.3.0.
 
             ### Install
+
+            **OpenWrt 24.x (opkg):**
             ```sh
-            # OpenWrt 24.10.x and below
-            opkg update
             opkg install luci-app-lpac-manager_${{ env.VERSION }}_all.ipk
-            
-            # OpenWrt 25.x and Snapshots
-            apk add --allow-untrusted luci-app-lpac-manager_${{ env.VERSION }}_noarch.apk
             ```
+
+            **OpenWrt 25.12+ (apk):**
+            ```sh
+            apk add --allow-untrusted luci-app-lpac-manager-${{ env.VERSION }}-r1_noarch.apk
+            ```
+
+            **Prerequisites:** `lpac`, `jq`, `luci-base`. For MBIM: `libmbim`, `mbim-utils`. For AT Terminal: `atinout`.
