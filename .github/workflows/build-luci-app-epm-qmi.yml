@@ -65,44 +65,37 @@ jobs:
           rm -rf "${PKGROOT}"
           mkdir -p "${PKGROOT}"
 
-          # 1) Lua controller + views (Safe copy without failing if dir is missing)
           if [ -d "${REPO_ROOT}/src/usr/lib/lua/luci" ]; then
             mkdir -p "${PKGROOT}/usr/lib/lua/luci"
             rsync -a "${REPO_ROOT}/src/usr/lib/lua/luci/" "${PKGROOT}/usr/lib/lua/luci/"
           fi
 
-          # 2) Backend shell scripts
           if [ -d "${REPO_ROOT}/src/usr/bin" ]; then
             mkdir -p "${PKGROOT}/usr/bin"
             rsync -a "${REPO_ROOT}/src/usr/bin/" "${PKGROOT}/usr/bin/"
             find "${PKGROOT}/usr/bin" -type f -exec chmod 0755 {} \;
           fi
 
-          # 3) Static web resources
           if [ -d "${REPO_ROOT}/htdocs/luci-static/resources" ]; then
             mkdir -p "${PKGROOT}/www/luci-static/resources"
             rsync -a "${REPO_ROOT}/htdocs/luci-static/resources/" "${PKGROOT}/www/luci-static/resources/"
           fi
 
-          # 4) Root overlay
           if [ -d "${REPO_ROOT}/root" ]; then
             rsync -a "${REPO_ROOT}/root/" "${PKGROOT}/"
           fi
 
-          # 5) Normalize legacy menu path
           mkdir -p "${PKGROOT}/usr/share/luci/menu.d"
           if [ -d "${PKGROOT}/usr/share/menu.d" ]; then
             rsync -a "${PKGROOT}/usr/share/menu.d/" "${PKGROOT}/usr/share/luci/menu.d/"
             rm -rf "${PKGROOT}/usr/share/menu.d"
           fi
 
-          # 6) UCI config
           mkdir -p "${PKGROOT}/etc/config"
           if [ -f "${REPO_ROOT}/etc/config/lpac-esim" ]; then
             cp "${REPO_ROOT}/etc/config/lpac-esim" "${PKGROOT}/etc/config/lpac-esim"
           fi
 
-          # 7) Normalize line endings and strip BOM
           find "${PKGROOT}" -type f \( \
             -name '*.lua' -o -name '*.js' -o -name '*.json' -o -name '*.htm' \
             -o -name '*.css' -o -path '*/etc/config/*' -o -path '*/usr/bin/*' \
@@ -112,7 +105,6 @@ jobs:
             -name '*.lua' -o -name '*.js' -o -name '*.htm' -o -path '*/usr/bin/*' \
           \) -print0 | xargs -0 -r sed -i '1s/^\xef\xbb\xbf//'
 
-          # 8) Non-crashing validation
           echo "=== pkgroot contents ==="
           find "${PKGROOT}" -maxdepth 8 -type f | sort || true
 
@@ -123,36 +115,35 @@ jobs:
           export PKG_VER="${{ env.VERSION }}"
           export SOURCE_DATE_EPOCH=1704067200
 
-          # Dynamically generate clean nfpm.yaml to prevent content collisions
-          # and ensure ZIP imports do not overwrite it with old configurations.
+          # Dynamically generate nfpm.yaml. Indentation is strictly aligned for YAML.
           cat > nfpm.yaml <<EOF
-name: "luci-app-lpac-manager"
-platform: "linux"
-arch: "all"
-version: "${PKG_VER}"
-section: "net"
-maintainer: "Medvedolog <Medvedolog@github.com>"
-description: |
-  eSIM profile management for OpenWrt.
-  LuCI web UI + lpac-esim shell backend.
-  Supports QMI, MBIM, AT backends via lpac 2.3.0.
-depends:
-  - luci-base
-  - jq
-contents:
-  - src: ./pkgroot/usr
-    dst: /usr
-    type: tree
-  - src: ./pkgroot/www
-    dst: /www
-    type: tree
-  - src: ./pkgroot/etc
-    dst: /etc
-    type: tree
-scripts:
-  postinstall: ./scripts/postinst
-  preremove: ./scripts/prerm
-EOF
+          name: "luci-app-lpac-manager"
+          platform: "linux"
+          arch: "all"
+          version: "${PKG_VER}"
+          section: "net"
+          maintainer: "Medvedolog <Medvedolog@github.com>"
+          description: |
+            eSIM profile management for OpenWrt.
+            LuCI web UI + lpac-esim shell backend.
+            Supports QMI, MBIM, AT backends via lpac 2.3.0.
+          depends:
+            - luci-base
+            - jq
+          contents:
+            - src: ./pkgroot/usr
+              dst: /usr
+              type: tree
+            - src: ./pkgroot/www
+              dst: /www
+              type: tree
+            - src: ./pkgroot/etc
+              dst: /etc
+              type: tree
+          scripts:
+            postinstall: ./scripts/postinst
+            preremove: ./scripts/prerm
+          EOF
 
           nfpm package \
             --config nfpm.yaml \
@@ -169,67 +160,55 @@ EOF
           export APK_DIR="${GITHUB_WORKSPACE}/packaging/apk"
           
           mkdir -p "${APK_DIR}"
-          
-          # Pass the assembled pkgroot into the Alpine build directory
           cp -a "${GITHUB_WORKSPACE}/pkgroot" "${APK_DIR}/"
 
-          # Dynamically generate clean APKBUILD
+          # Dynamically generate APKBUILD. Indentation is strictly aligned for YAML.
           cat > "${APK_DIR}/APKBUILD" <<EOF
-# Contributor: Medvedolog <Medvedolog@github.com>
-# Maintainer: Medvedolog <Medvedolog@github.com>
-pkgname="luci-app-lpac-manager"
-pkgver="${PKG_VER}"
-pkgrel=1
-pkgdesc="eSIM profile management for OpenWrt"
-url="https://github.com/Medvedolog/lpac-esim-openwrt"
-arch="noarch"
-license="MIT"
-depends="luci-base jq"
-install="\$pkgname.post-install \$pkgname.pre-deinstall"
-source=""
+          # Contributor: Medvedolog <Medvedolog@github.com>
+          # Maintainer: Medvedolog <Medvedolog@github.com>
+          pkgname="luci-app-lpac-manager"
+          pkgver="${PKG_VER}"
+          pkgrel=1
+          pkgdesc="eSIM profile management for OpenWrt"
+          url="https://github.com/Medvedolog/lpac-esim-openwrt"
+          arch="noarch"
+          license="MIT"
+          depends="luci-base jq"
+          install="\$pkgname.post-install \$pkgname.pre-deinstall"
+          source=""
 
-build() {
-    return 0
-}
+          build() {
+              return 0
+          }
 
-package() {
-    mkdir -p "\$pkgdir"
-    cp -a "\$builddir"/pkgroot/* "\$pkgdir"/
-}
-EOF
+          package() {
+              mkdir -p "\$pkgdir"
+              cp -a "\$builddir"/pkgroot/* "\$pkgdir"/
+          }
+          EOF
 
-          # Ensure post-install script exists
           if [ ! -f "${APK_DIR}/luci-app-lpac-manager.post-install" ]; then
             echo -e "#!/bin/sh\nexit 0" > "${APK_DIR}/luci-app-lpac-manager.post-install"
           fi
 
-          # Ensure pre-deinstall script exists
           if [ ! -f "${APK_DIR}/luci-app-lpac-manager.pre-deinstall" ]; then
             echo -e "#!/bin/sh\nexit 0" > "${APK_DIR}/luci-app-lpac-manager.pre-deinstall"
           fi
 
-          # Run the build inside an Alpine edge container
           docker run --rm \
             -v "${APK_DIR}:/work" \
             -w /work \
             alpine:edge \
             sh -c "
               apk add --no-cache alpine-sdk sudo
-              
-              # Create a non-root user for abuild
               adduser -D -G abuild builder
               chown -R builder:abuild /work
-              
-              # Generate keys and build the package
               su builder -c 'abuild-keygen -a -i -n'
               su builder -c 'REPODEST=/work/out abuild -r'
-              
-              # Safely find the built APK and rename it to a predictable format
               APK_FILE=\$(find /work/out -type f -name \"*.apk\" ! -name \"APKINDEX*\" | head -n1)
               cp \"\$APK_FILE\" \"/work/${PKG_NAME}-${PKG_VER}-r1_noarch.apk\"
             "
 
-          # Move the renamed artifact to the GitHub Actions workspace root
           mv "${APK_DIR}"/*_noarch.apk ./
           ls -lh *.apk
 
