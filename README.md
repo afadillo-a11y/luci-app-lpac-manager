@@ -4,9 +4,10 @@
 
 **luci-app-lpac-manager** — веб-интерфейс LuCI и консольный инструмент для управления eSIM-профилями на роутерах OpenWrt через бинарник **lpac 2.3.0**.
 
-Пакет адаптирован для **OpenWrt 24.10.x / 25.x** и поддерживает три APDU-бэкенда:
+Пакет адаптирован для **OpenWrt 24.10.x / 25.x** и поддерживает четыре APDU-бэкенда:
 
-- **QMI** — основной, для модемов в QMI-режиме (PID 9025 и др.)
+- **QMI** — нативный, через libqmi (кастомная сборка lpac_openwrt)
+- **uQMI** — через CLI-утилиту `uqmi` (официальный lpac из репо OpenWrt 25.12)
 - **MBIM** — для модемов в MBIM-режиме (PID 90d5 и др.)
 - **AT** — резервный, через AT-порт модема
 
@@ -34,7 +35,7 @@ LuCi WebUI был адаптирован под новую версию `lpac 2.
 | Фича | `luci-app-epm` | `luci-app-lpac-manager` |
 | :--- | :--- | :--- |
 | **Shell backend (`lpac-esim`)** | ❌ Нет | ✅ Да (1474 строки, TUI + API) |
-| **Выбор backend (QMI/MBIM/AT)** | ⚠️ Частично | ✅ Да (в веб-интерфейсе + в TUI при старте) |
+| **Выбор backend (QMI/uQMI/MBIM/AT)** | ⚠️ Частично | ✅ Да (в веб-интерфейсе + в TUI при старте) |
 | **Async операции (switch/download)** | ❌ Нет | ✅ Да (lock + result file + polling) |
 | **AT-терминал в веб-интерфейсе** | ❌ Нет | ✅ Да (с preset-кнопками) |
 | **Diagnostics** | ❌ Нет | ✅ Да (syslog, 4 вида сброса/reset, system check) |
@@ -45,7 +46,7 @@ LuCi WebUI был адаптирован под новую версию `lpac 2.
 | **Расширенные ошибки lpac** | ⚠️ Generic | ✅ Да (code + message) |
 | **Timeout fallback** | ⚠️ Жёсткая зависимость | ✅ Да (безопасный fallback без `coreutils-timeout`) |
 | **Proxy/TLS workaround** | ❌ Нет | ✅ Да (`unset proxy` + временный `.curlrc`) |
-| **Версии в заголовке** | ❌ Нет | ✅ Да (v1.3.3 / lpac v2.3.0 / MBIM) |
+| **Версии в заголовке** | ❌ Нет | ✅ Да (v1.3.6 / lpac v2.3.0 / MBIM) |
 | **One-shot CLI команды** | ❌ Нет | ✅ Да (`lpac-esim profiles` и т.д.) |
 
 ## 🤝 Что осталось одинаковым
@@ -67,12 +68,12 @@ LuCi WebUI был адаптирован под новую версию `lpac 2.
 | **Profiles** | Таблица профилей (имя, ICCID, провайдер, статус). Кнопки: Switch, Delete, Rename. Перезагрузка модема |
 | **Download Profile** | Загрузка нового eSIM: QR-код (сканирование камерой или файлом), LPA-строка, или SM-DP+ / Matching ID / Confirmation Code раздельно |
 | **Notifications** | Уведомления eUICC. Process & Remove All (онлайн), Clear All (офлайн) |
-| **Configuration** | Backend Type (QMI/AT/MBIM), пути устройств, SIM-слот, MBIM proxy. Сохранение в UCI |
+| **Configuration** | Backend Type (QMI/uQMI/AT/MBIM), пути устройств, SIM-слот, MBIM proxy. Сохранение в UCI |
 | **Diagnostics** | System Check (проверка tools, версий, устройств). Системный лог. 4 уровня сброса модема |
 
 ### Заголовок страницы
 
-На главной отображается текущая версия: `eSIM Profile Manager v1.3.2 / lpac v2.3.0 / QMI`
+На главной отображается текущая версия: `eSIM Profile Manager v1.3.6 / lpac v2.3.0 / QMI`
 
 ### Консольный режим (SSH)
 
@@ -190,7 +191,7 @@ opkg install libmbim mbim-utils           # для MBIM (опционально)
 opkg install /tmp/lpac_2.3.0_aarch64_cortex-a53.ipk
 
 # Установить luci-app-lpac-manager
-opkg install /tmp/luci-app-lpac-manager_1.3.2_all.ipk
+opkg install /tmp/luci-app-lpac-manager_1.3.6_all.ipk
 ```
 
 ### Вариант 2: OpenWrt 25.x (apk, APK)
@@ -210,7 +211,7 @@ apk add libmbim mbim-utils               # для MBIM
 apk add --allow-untrusted /tmp/lpac-2.3.0-r2.apk
 
 # Установить luci-app-lpac-manager
-apk add --allow-untrusted /tmp/luci-app-lpac-manager-1.3.2.apk
+apk add --allow-untrusted /tmp/luci-app-lpac-manager-1.3.6.apk
 
 # Может потребоваться для LuCI Lua-совместимости
 apk add luci-compat luci-lua-runtime
@@ -224,7 +225,7 @@ apk add luci-compat luci-lua-runtime
 
 ```sh
 # Загрузить пакеты на роутер (через WinSCP, luci-app-filemanager или wget)
-# Файлы: lpac-2.3.0-r2.apk, luci-app-lpac-manager-1.3.2.apk
+# Файлы: lpac-2.3.0-r2.apk, luci-app-lpac-manager-1.3.6.apk
 
 # OpenWrt 25.x
 apk add --allow-untrusted /tmp/lpac-2.3.0-r2.apk
@@ -245,7 +246,7 @@ opkg install /tmp/lpac_2.3.0-r2.ipk
 Для разработки и тестирования — без сборки IPK/APK:
 
 ```sh
-cd /tmp && unzip -o luci-app-lpac-manager-v1.3.2.zip
+cd /tmp && unzip -o luci-app-lpac-manager-v1.3.6.zip
 
 # Backend скрипт
 cp luci-app-lpac-manager/src/usr/bin/lpac-esim /usr/bin/lpac-esim
@@ -282,15 +283,59 @@ rm -rf /tmp/luci-modulecache /tmp/luci-indexcache*
 
 ## Настройка бэкендов
 
-### QMI (по умолчанию)
+### Автоматический детект сборки lpac
 
-Для модемов в QMI-режиме (T99W175 PID 9025, и др.):
+При открытии вкладки **Diagnostics** интерфейс автоматически определяет тип установленного `lpac` и сообщает рекомендуемый бэкенд:
+
+| Тип сборки | Как определяется | Рекомендуемый бэкенд |
+|---|---|---|
+| **Official dynamic** | `/usr/lib/lpac/*.so` (драйверы как плагины) | `uqmi` |
+| **Custom native-QMI** | `ldd lpac` содержит `libqmi` | `qmi` |
+| **Unknown** | ни то ни другое | `at` |
+
+Если текущий бэкенд не совпадает с рекомендованным — в Diagnostics появится предупреждение.
+
+### Какую сборку lpac использовать
+
+**Официальная (из репо OpenWrt 25.12):**
+```sh
+# OpenWrt 25.12+
+apk add lpac
+```
+- Драйверы: `uqmi`, `mbim`, `at`, `pcsc` (динамические .so)
+- Не требует `libqmi`, работает с `uqmi` из базового OpenWrt
+- Рекомендуемый бэкенд: **uQMI**
+
+**Кастомная (lpac_openwrt, нативный QMI):**
+```sh
+# Собрана отдельно с LPAC_WITH_APDU_QMI=ON
+```
+- Драйверы: `qmi` (статически через libqmi), `mbim`, `at`
+- Требует установленного `libqmi`
+- Рекомендуемый бэкенд: **QMI**
+- Преимущество: постоянное QMI-соединение без fork на каждую APDU-транзакцию
+
+### QMI (нативный libqmi, кастомная сборка)
+
+Для модемов в QMI-режиме (T99W175 PID 9025 и др.) с кастомным `lpac_openwrt`:
 
 | Параметр | Значение |
 |----------|----------|
 | Backend Type | QMI |
 | QMI Device | `/dev/cdc-wdm0` |
 | SIM Slot | 1 |
+
+### uQMI (официальная сборка OpenWrt 25.12)
+
+Для официального `lpac` из репо OpenWrt 25.12:
+
+| Параметр | Значение |
+|----------|----------|
+| Backend Type | uQMI |
+| QMI Device | `/dev/cdc-wdm0` |
+| SIM Slot | 1 |
+
+Зависимость: пакет `uqmi` (обычно уже установлен в базовом OpenWrt).
 
 ### MBIM
 
@@ -319,8 +364,14 @@ rm -rf /tmp/luci-modulecache /tmp/luci-indexcache*
 Backend-скрипт `lpac-esim` автоматически выставляет нужные переменные. Для ручного вызова `lpac` из SSH:
 
 ```sh
-# QMI
+# QMI (нативный libqmi, кастомная сборка)
 LPAC_APDU=qmi LPAC_HTTP=curl \
+LPAC_APDU_QMI_DEVICE=/dev/cdc-wdm0 \
+LPAC_APDU_QMI_UIM_SLOT=1 \
+lpac chip info
+
+# uQMI (официальная сборка OpenWrt 25.12)
+LPAC_APDU=uqmi LPAC_HTTP=curl \
 LPAC_APDU_QMI_DEVICE=/dev/cdc-wdm0 \
 LPAC_APDU_QMI_UIM_SLOT=1 \
 lpac chip info
@@ -328,7 +379,7 @@ lpac chip info
 # MBIM
 LPAC_APDU=mbim LPAC_HTTP=curl \
 LPAC_APDU_MBIM_DEVICE=/dev/cdc-wdm0 \
-LPAC_APDU_MBIM_USE_PROXY=1 \
+LPAC_APDU_MBIM_USE_PROXY=true \
 lpac chip info
 
 # AT
@@ -351,18 +402,18 @@ Browser → LuCI (uhttpd) → lpac_esim.lua (io.popen) → lpac-esim --api → J
 ```
 
 Два компонента в пакете:
-- **`/usr/bin/lpac-esim`** — backend-скрипт (~1400 строк POSIX shell), TUI + API
-- **LuCI WebUI** — Lua controller (~550 строк) + 7 HTM + 9 JS + CSS
+- **`/usr/bin/lpac-esim`** — backend-скрипт (~1550 строк POSIX shell), TUI + API
+- **LuCI WebUI** — Lua controller (~560 строк) + 7 HTM + 9 JS + CSS
 
 Бинарник `/usr/bin/lpac` — отдельный пакет, ищется через `command -v lpac`.
 Никаких промежуточных wrapper-скриптов.
 
-### API-эндпоинты (21)
+### API-эндпоинты (22)
 
 | Тип | Эндпоинты |
 |-----|-----------|
 | GET | profiles, chip, modem_status, notif_list, lock_status, config, connectivity, syslog, runlog, version |
-| POST | switch, reboot_modem, notif_clear, notif_process, download, delete, nickname, save_config, soft_reset, usb_reset, uicc_reset |
+| POST | switch, disable, reboot_modem, notif_clear, notif_process, download, delete, nickname, save_config, soft_reset, usb_reset, uicc_reset |
 
 Async-операции (switch, download, reboot, notif_process) выполняются в фоне. Frontend поллит `lock_status` до получения результата.
 
@@ -494,7 +545,7 @@ ls /dev/cdc-wdm*
 
 - Встроенные eUICC без SIM-слота (vendor-specific доступ)
 - Модемы с нестандартным UIM-доступом
-- Legacy uqmi-only интеграции
+- uqmi без QMI device path (нестандартная конфигурация)
 - Десктопные Linux-дистрибутивы
 
 ---
@@ -533,19 +584,3 @@ MIT
 
 
 
-# LuCI Web Interface for managing eSIM profiles via lpac 2.3.0 (QMI/AT)
-
-## What is this?
-
-**luci-app-lpac-manager** is a LuCI web interface for OpenWrt that provides eSIM profile management through **lpac 2.3.0**.
-
-This variant is specifically adapted for **OpenWrt 24.10.x** and focuses on:
-
-- **native QMI** as the primary LPAC APDU backend
-- **AT** as a fallback backend
-- modern **lpac 2.3.0** environment variables and runtime behavior
-- external eSIM cards installed in a modem SIM/UIM slot, such as **9eSIM** in modules like **T99W175**
-
-This package is intentionally separated from older builds to distinguish it from earlier `uqmi` / `mbim` oriented variants like luci-app-epm.
-
----
