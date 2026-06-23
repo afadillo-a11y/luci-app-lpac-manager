@@ -1,7 +1,7 @@
 #!/bin/sh
 # lpac-esim — eSIM profile management for OpenWrt
 # BusyBox ash / POSIX shell
-# Version: 1.3.5
+# Version: 1.3.6
 # License: GPL-2.0
 #
 # Changelog:
@@ -17,7 +17,7 @@
 ###############################################################################
 
 APP_NAME="lpac-esim"
-APP_VER="2.6.0"
+APP_VER="1.3.6"
 
 NO_COLOR="${NO_COLOR:-0}"
 QUIET=0
@@ -246,10 +246,13 @@ build_lpac_env() {
     if [ "$BACKEND" = "qmi" ]; then
         printf 'LPAC_APDU=qmi LPAC_HTTP=%s LPAC_APDU_QMI_DEVICE=%s LPAC_APDU_QMI_UIM_SLOT=%s' \
             "$HTTP_BACKEND" "$QMI_DEVICE" "$QMI_SLOT"
+    elif [ "$BACKEND" = "uqmi" ]; then
+        printf 'LPAC_APDU=uqmi LPAC_HTTP=%s LPAC_APDU_QMI_DEVICE=%s LPAC_APDU_QMI_UIM_SLOT=%s' \
+            "$HTTP_BACKEND" "$QMI_DEVICE" "$QMI_SLOT"
     elif [ "$BACKEND" = "mbim" ]; then
         printf 'LPAC_APDU=mbim LPAC_HTTP=%s LPAC_APDU_MBIM_DEVICE=%s' \
             "$HTTP_BACKEND" "$MBIM_DEVICE"
-        [ "$MBIM_PROXY" = "1" ] && printf ' LPAC_APDU_MBIM_USE_PROXY=1'
+        [ "$MBIM_PROXY" = "1" ] && printf ' LPAC_APDU_MBIM_USE_PROXY=true'
     else
         printf 'LPAC_APDU=at LPAC_HTTP=%s LPAC_APDU_AT_DEVICE=%s' "$HTTP_BACKEND" "$AT_DEVICE"
     fi
@@ -769,6 +772,56 @@ api_lock_status() {
 }
 
 # POST switch <iccid> — async, returns immediately with processing status
+api_disable() {
+    iccid="$1"
+    [ -z "$iccid" ] && api_err "missing_param" "ICCID parameter is required" && return 1
+
+    api_check_lock || return 1
+
+    pf="$(get_profiles_json)" || { api_err "lpac_error" "Failed to read profiles"; return 1; }
+    rec="$(profile_resolve_record "$pf" "$iccid")"
+    if [ -z "$rec" ]; then
+        api_err "not_found" "Profile not found: $iccid"
+        return 1
+    fi
+
+    old_IFS="$IFS"; IFS='|'; set -- $rec; IFS="$old_IFS"
+    t_iccid="$2"; t_state="$4"; t_nick="$5"
+
+    # Fast path: already disabled
+    if [ "$t_state" != "enabled" ]; then
+        "$JQ_BIN" -nc --arg iccid "$t_iccid" --arg nick "$t_nick" \
+            '{"type":"lpa","payload":{"code":0,"message":"already_disabled","data":{"iccid":$iccid,"nickname":$nick}}}'
+        return 0
+    fi
+
+    syslog_msg "API: Profile disable initiated | Target: $t_nick ($t_iccid)"
+
+    # Launch in background — same pattern as api_switch()
+    NONINTERACTIVE=1
+    (
+        QUIET=1; NONINTERACTIVE=1
+        if try_profile_action_variants "disable" "disabled" "$t_iccid" "" >> "$LOG_FILE" 2>&1; then
+            async_finish "success" "Profile $t_nick disabled"
+        else
+            async_finish "error" "Failed to disable profile $t_iccid"
+        fi
+        syslog_msg "API: Profile disable background job completed | $t_iccid"
+    ) >/dev/null 2>&1 &
+    bgpid=$!
+    NONINTERACTIVE=0
+
+    # Write lock AFTER fork, in parent — same as api_switch()
+    printf '%s\n' "$bgpid" > "$LOCK_FILE"
+
+    "$JQ_BIN" -nc \
+        --arg iccid  "$t_iccid" \
+        --arg nick   "$t_nick" \
+        --argjson pid "$bgpid" \
+        '{"type":"lpa","payload":{"code":0,"message":"processing","data":{"status":"disabling","iccid":$iccid,"nickname":$nick,"pid":$pid,"poll_url":"lock-status"}}}'
+    return 0
+}
+
 api_switch() {
     iccid="$1"
     [ -z "$iccid" ] && api_err "missing_param" "ICCID parameter is required" && return 1
@@ -1021,29 +1074,83 @@ api_runlog() {
 }
 
 # GET version — package and component versions
+# Detect lpac build type: official dynamic (.so drivers) vs custom native-qmi (static libqmi)
+# Resolve the actual lpac binary (not a wrapper script)
+detect_lpac_binary() {
+    # Custom lpac_openwrt installs real ELF binary at /usr/lib/lpac
+    # (wrapper at /usr/bin/lpac just sets env vars)
+    if [ -x "/usr/lib/lpac" ] && [ ! -d "/usr/lib/lpac" ]; then
+        printf '%s\n' "/usr/lib/lpac"
+        return 0
+    fi
+    # Official OpenWrt lpac: real binary is at /usr/bin/lpac (no wrapper)
+    if [ -n "$LPAC_BIN" ] && [ -x "$LPAC_BIN" ]; then
+        printf '%s\n' "$LPAC_BIN"
+        return 0
+    fi
+    return 1
+}
+
+detect_lpac_build() {
+    local build_type="unknown"
+    local drivers=""
+    local recommended="at"
+    local real_bin
+    real_bin="$(detect_lpac_binary 2>/dev/null || true)"
+
+    # Official OpenWrt lpac: loads APDU drivers as shared libraries from /usr/lib/lpac/
+    if [ -d "/usr/lib/lpac" ] && ls /usr/lib/lpac/*.so >/dev/null 2>&1; then
+        build_type="official-dynamic"
+        drivers="$(ls /usr/lib/lpac/*.so 2>/dev/null | sed 's|.*/lpac_driver_||;s|\.so$||' | tr '\n' ',' | sed 's/,$//')"
+        [ -z "$drivers" ] && drivers="uqmi,mbim,at,pcsc"
+        recommended="uqmi"
+    # Custom lpac_openwrt: ldd against the REAL binary (not the wrapper)
+    elif [ -n "$real_bin" ] && ldd "$real_bin" 2>/dev/null | grep -q "libqmi"; then
+        build_type="custom-native-qmi"
+        drivers="qmi,mbim,at"
+        recommended="qmi"
+    # Heuristic: uqmi present without qmicli → official ecosystem
+    elif command -v uqmi >/dev/null 2>&1 && ! command -v qmicli >/dev/null 2>&1; then
+        build_type="official-dynamic"
+        drivers="uqmi,at"
+        recommended="uqmi"
+    fi
+
+    printf '%s|%s|%s' "$build_type" "$drivers" "$recommended"
+}
+
 api_version() {
     local lpac_ver=""
     if [ -n "$LPAC_BIN" ]; then
         lpac_ver="$($LPAC_BIN version 2>/dev/null | "$JQ_BIN" -r '.payload.data // "unknown"' 2>/dev/null)"
     fi
     [ -z "$lpac_ver" ] && lpac_ver="missing"
-    local script_ver="1.3.5"
+    local script_ver="1.3.6"
     local be="${BACKEND:-unknown}"
     local dev=""
     case "$be" in
-        qmi)  dev="${QMI_DEVICE:-?}" ;;
-        mbim) dev="${MBIM_DEVICE:-?}" ;;
-        at)   dev="${AT_DEVICE:-?}" ;;
+        qmi|uqmi) dev="${QMI_DEVICE:-?}" ;;
+        mbim)     dev="${MBIM_DEVICE:-?}" ;;
+        at)       dev="${AT_DEVICE:-?}" ;;
     esac
+
+    local build_type drivers recommended
+    local _binfo; _binfo="$(detect_lpac_build)"
+    build_type="${_binfo%%|*}"; _binfo="${_binfo#*|}"
+    drivers="${_binfo%%|*}"; recommended="${_binfo#*|}"
+
     "$JQ_BIN" -nc \
-        --arg sv "$script_ver" \
-        --arg lv "$lpac_ver" \
-        --arg be "$be" \
-        --arg dev "$dev" \
-        --arg at "${AT_DEVICE:-none}" \
-        --arg qmi "${QMI_DEVICE:-none}" \
-        --arg mbim "${MBIM_DEVICE:-none}" \
-        '{"type":"lpa","payload":{"code":0,"message":"success","data":{"script_version":$sv,"lpac_version":$lv,"backend":$be,"device":$dev,"at_device":$at,"qmi_device":$qmi,"mbim_device":$mbim}}}'
+        --arg sv      "$script_ver" \
+        --arg lv      "$lpac_ver" \
+        --arg be      "$be" \
+        --arg dev     "$dev" \
+        --arg at      "${AT_DEVICE:-none}" \
+        --arg qmi     "${QMI_DEVICE:-none}" \
+        --arg mbim    "${MBIM_DEVICE:-none}" \
+        --arg build   "$build_type" \
+        --arg drivers "$drivers" \
+        --arg rec     "$recommended" \
+        '{"type":"lpa","payload":{"code":0,"message":"success","data":{"script_version":$sv,"lpac_version":$lv,"backend":$be,"device":$dev,"at_device":$at,"qmi_device":$qmi,"mbim_device":$mbim,"lpac_build":$build,"available_drivers":$drivers,"recommended_backend":$rec}}}'
 }
 
 # POST at-cmd <command> — send AT command to serial port, return response
@@ -1443,6 +1550,7 @@ main() {
             profiles)     api_profiles ;;
             chip)         api_chip ;;
             switch)       api_switch "$COMMAND_ARG" ;;
+            disable)      api_disable "$COMMAND_ARG" ;;
             reboot-modem) api_reboot ;;
             notif-list)   api_notif_list ;;
             notif-clear)  api_notif_clear ;;

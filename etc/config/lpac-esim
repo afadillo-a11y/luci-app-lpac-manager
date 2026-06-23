@@ -1,11 +1,10 @@
 config lpac-esim 'main'
-	# APDU backend: qmi | at | mbim
+	# APDU backend: qmi | uqmi | at | mbim
 	option apdu_backend     'qmi'
 
 	# QMI (primary)
 	option qmi_device       '/dev/cdc-wdm0'
 	option qmi_sim_slot     '1'
-	option sim_slot         '0'
 
 	# AT (fallback for reboot cascade)
 	option at_device        '/dev/ttyUSB3'

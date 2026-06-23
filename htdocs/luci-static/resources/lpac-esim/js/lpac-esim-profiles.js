@@ -1,4 +1,4 @@
-/* lpac-esim-profiles.js — v1.3.5 */
+/* lpac-esim-profiles.js — v1.3.6 */
 'use strict';
 
 function loadProfiles() {
@@ -321,20 +321,32 @@ function disableProfile(iccid, name) {
     clearProfileStatus();
     showProfileSuccess('Disabling profile...');
 
-    apiPost('switch', { iccid: iccid })
+    apiPost('disable', { iccid: iccid })
         .then(function(data) {
-            if (data && data.payload && data.payload.data && data.payload.data.status) {
-                showProfileSuccess('Profile disable initiated. Modem is rebooting...');
-                startLockPolling(function(result) {
-                    if (result && result.status === 'success') {
-                        showProfileSuccess(result.message || 'Profile disabled.');
-                    } else if (result && result.status === 'error') {
-                        showProfileError(result.message || 'Disable failed.');
-                    }
-                    loadProfiles();
-                });
-            } else if (data && data.payload) {
-                showProfileError('Disable failed: ' + (data.payload.message || 'Unknown'));
+            if (data && data.payload) {
+                if (data.payload.message === 'processing') {
+                    showProfileSuccess('Profile disable initiated. Waiting for modem...');
+                    startLockPolling(function(result) {
+                        if (result && result.success) {
+                            showProfileSuccess(result.message || 'Profile disabled.');
+                        } else if (result && !result.success) {
+                            showProfileError(result.message || 'Disable failed.');
+                        } else {
+                            showProfileSuccess('Operation completed.');
+                        }
+                        setTimeout(loadProfiles, 1500);
+                    });
+                } else if (data.payload.message === 'already_disabled') {
+                    showProfileSuccess('Profile is already disabled.');
+                    setTimeout(loadProfiles, 1000);
+                } else if (data.payload.code === 0) {
+                    showProfileSuccess('Profile disabled successfully.');
+                    setTimeout(loadProfiles, 1500);
+                } else {
+                    var msg = data.payload.message || 'Disable failed';
+                    if (data.payload.data && data.payload.data.msg) msg += ': ' + data.payload.data.msg;
+                    showProfileError(msg);
+                }
             }
         })
         .catch(function(e) {

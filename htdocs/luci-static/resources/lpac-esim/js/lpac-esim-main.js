@@ -1,4 +1,4 @@
-/* lpac-esim-main.js — v1.3.5 */
+/* lpac-esim-main.js — v1.3.6 */
 'use strict';
 
 var BASE_URL = L.env.scriptname + '/admin/modem/lpac-esim/';
@@ -34,7 +34,7 @@ function showTab(tabId, el) {
             case 'profiles-tab':      if (typeof loadProfiles === 'function') loadProfiles(); break;
             case 'notifications-tab': if (typeof loadNotifications === 'function') loadNotifications(); break;
             case 'config-tab':        if (typeof loadConfig === 'function') loadConfig(); break;
-            case 'diag-tab':          if (typeof loadSyslog === 'function') loadSyslog(); break;
+            case 'diag-tab':          if (typeof loadSyslog === 'function') loadSyslog(); if (typeof loadVersionInfo === 'function') loadVersionInfo(); break;
         }
     }
     return false;
@@ -156,7 +156,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data && data.payload && data.payload.data) {
             var v = data.payload.data;
             var el = document.getElementById('esim-app-version');
-            if (el) el.textContent = 'v' + (v.script_version || '?') + ' / lpac ' + (v.lpac_version || '?') + ' / ' + (v.backend || '?').toUpperCase();
+            var buildShort = v.lpac_build === 'official-dynamic' ? 'official' : v.lpac_build === 'custom-native-qmi' ? 'custom' : '?';
+            if (el) el.textContent = 'v' + (v.script_version || '?') + ' / lpac ' + (v.lpac_version || '?') + ' [' + buildShort + '] / ' + (v.backend || '?').toUpperCase();
         }
     }).catch(function() {});
     /* Activate first tab — triggers lazy load for Info only */

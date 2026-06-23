@@ -7,7 +7,7 @@
       "recurse": true
     },
     "depends": {
-      "acl": ["luci-app-lpac-esim"]
+      "acl": ["luci-app-lpac-manager"]
     }
   },
   "admin/modem/lpac-esim": {
@@ -18,7 +18,7 @@
       "path": "lpac_esim/main"
     },
     "depends": {
-      "acl": ["luci-app-lpac-esim"]
+      "acl": ["luci-app-lpac-manager"]
     }
   }
 }

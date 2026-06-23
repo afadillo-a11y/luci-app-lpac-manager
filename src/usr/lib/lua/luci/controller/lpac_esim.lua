@@ -1,9 +1,12 @@
 -- /usr/lib/lua/luci/controller/lpac_esim.lua
 -- LuCI controller for eSIM management via lpac-esim backend
--- Version: 1.3.5
+-- Version: 1.3.6
 -- License: GPL-2.0
 --
 -- Changelog:
+--   1.3.6 - uqmi backend support (LPAC_APDU=uqmi); fix disableProfile() switch→disable;
+--           fix MBIM proxy env (LPAC_APDU_MBIM_USE_PROXY); unify slot key to qmi_sim_slot;
+--           fix lock banner ID; add api_disable endpoint
 --   1.3.0 - Diagnostics tab (syslog, soft/usb/uicc reset), io.popen fix,
 --           theme-safe CSS, adaptive reset descriptions, MBIM config text fix
 --   1.2.2 - ANSI/jq/async fixes, diagnostics APIs
@@ -59,6 +62,7 @@ function index()
 
     -- Write endpoints (POST, some async)
     entry({"admin", "modem", "lpac-esim", "switch"},       call("api_switch"),       nil).leaf = true
+    entry({"admin", "modem", "lpac-esim", "disable"},      call("api_disable"),      nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "reboot_modem"}, call("api_reboot"),       nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "notif_clear"},  call("api_notif_clear"),  nil).leaf = true
     entry({"admin", "modem", "lpac-esim", "save_config"},  call("api_save_config"),  nil).leaf = true
@@ -89,11 +93,17 @@ local function read_config()
     local config = {}
     uci:foreach(UCI_CONFIG, UCI_SECTION, function(s) config = s end)
 
+    -- Migrate legacy sim_slot (0/1) -> qmi_sim_slot (1/2) for users upgrading from <1.3.6
+    if not config.qmi_sim_slot and config.sim_slot then
+        if     config.sim_slot == "0" then config.qmi_sim_slot = "1"
+        elseif config.sim_slot == "1" then config.qmi_sim_slot = "2"
+        end
+    end
+
     -- Apply sane defaults when UCI is empty or missing
     config.apdu_backend  = config.apdu_backend  or "qmi"
     config.qmi_device    = config.qmi_device    or "/dev/cdc-wdm0"
     config.qmi_sim_slot  = config.qmi_sim_slot  or "1"
-    config.sim_slot      = config.sim_slot      or "0"
     config.at_device     = config.at_device     or ""
     config.mbim_device   = config.mbim_device   or "/dev/cdc-wdm0"
     config.mbim_proxy    = config.mbim_proxy    or "0"
@@ -116,6 +126,8 @@ function exec_script(cmd, timeout, silent)
     local t        = timeout or 30
 
     -- Build flags string based on backend
+    -- uqmi is a variant of qmi: uses same device/slot flags but lpac-esim
+    -- will set LPAC_APDU=uqmi instead of LPAC_APDU=qmi
     local flags = "--api --backend " .. util.shellquote(backend)
 
     if backend == "mbim" then
@@ -123,7 +135,10 @@ function exec_script(cmd, timeout, silent)
         if config.mbim_proxy == "1" then
             flags = flags .. " --mbim-proxy"
         end
+    elseif backend == "at" then
+        -- AT-only mode: no device/slot flags needed (at_dev handled below)
     else
+        -- qmi or uqmi: both use the same device and slot parameters
         flags = flags .. " --device " .. util.shellquote(config.qmi_device)
         flags = flags .. " --slot " .. util.shellquote(config.qmi_sim_slot)
     end
@@ -299,6 +314,25 @@ function api_switch()
     send_json(data or make_error("backend_error", "No response from backend"))
 end
 
+function api_disable()
+    if not require_post() then return end
+
+    local iccid = luci.http.formvalue("iccid")
+    if not iccid or iccid == "" then
+        send_json(make_error("missing_param", "iccid required"))
+        return
+    end
+
+    if not valid_iccid(iccid) then
+        send_json(make_error("invalid_iccid", "ICCID must be 18-22 digits"))
+        return
+    end
+
+    local raw  = exec_script("disable " .. util.shellquote(iccid), 10)
+    local data = parse_lpac_json(raw)
+    send_json(data or make_error("backend_error", "No response from backend"))
+end
+
 function api_reboot()
     if not require_post() then return end
 
@@ -350,7 +384,7 @@ function api_save_config()
     -- Whitelist allowed config keys to prevent injection
     local allowed_keys = {
         "apdu_backend",
-        "qmi_device", "qmi_sim_slot", "sim_slot",
+        "qmi_device", "qmi_sim_slot",
         "at_device",
         "mbim_device", "mbim_proxy",
         "reboot_method",
@@ -369,18 +403,14 @@ function api_save_config()
     end
 
     -- Validate values
-    local valid_backends = { qmi = true, at = true, mbim = true }
+    local valid_backends = { qmi = true, uqmi = true, at = true, mbim = true }
     if sanitized.apdu_backend and not valid_backends[sanitized.apdu_backend] then
-        send_json({ success = false, error = "Invalid backend. Use: qmi, at, mbim" })
+        send_json({ success = false, error = "Invalid backend. Use: qmi, uqmi, at, mbim" })
         return
     end
     local valid_slots = { ["1"] = true, ["2"] = true }
-    local valid_sim_slots = { ["0"] = true, ["1"] = true }
     if sanitized.qmi_sim_slot and not valid_slots[sanitized.qmi_sim_slot] then
         return send_json(make_error("invalid_config", "Invalid QMI slot. Use: 1 or 2"))
-    end
-    if sanitized.sim_slot and not valid_sim_slots[sanitized.sim_slot] then
-        return send_json(make_error("invalid_config", "Invalid SIM slot. Use: 0 or 1"))
     end
     local valid_flags = { ["0"] = true, ["1"] = true }
     for _, fkey in ipairs({"apdu_debug", "http_debug", "at_debug", "mbim_proxy"}) do
@@ -435,9 +465,10 @@ function api_download()
     -- Build backend command
     local dl_flags = ""
     if has_lpa then
-        -- Light sanity check: LPA:1$something$something — lpac does real parsing
-        if not lpa:match("^LPA:1%$.+%$.") then
-            send_json(make_error("invalid_lpa", "LPA code must match format LPA:1$domain$code"))
+        -- Light sanity check: must start LPA:1$ and contain at least one more $ after the domain
+        -- Empty matching-id is valid (some operators omit it); lpac does full parsing
+        if not lpa:match("^LPA:1%$.+%$") then
+            send_json(make_error("invalid_lpa", "LPA code must start with LPA:1$<domain>$"))
             return
         end
         dl_flags = "download --lpa " .. util.shellquote(lpa)

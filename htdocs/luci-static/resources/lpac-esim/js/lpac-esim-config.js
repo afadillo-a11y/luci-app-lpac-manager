@@ -1,4 +1,4 @@
-/* lpac-esim-config.js — v1.3.5 */
+/* lpac-esim-config.js — v1.3.6 */
 'use strict';
 
 function loadConfig() {
@@ -31,7 +31,7 @@ function loadConfig() {
 function populateConfig(cfg) {
     setVal('cfg-apdu-backend',  cfg.apdu_backend  || 'qmi');
     setVal('cfg-qmi-device',    cfg.qmi_device    || '/dev/cdc-wdm0');
-    setVal('cfg-sim-slot',      cfg.sim_slot      || '0');
+    setVal('cfg-qmi-slot',      cfg.qmi_sim_slot  || '1');
     setVal('cfg-at-device',     cfg.at_device     || '/dev/ttyUSB3');
     setVal('cfg-mbim-device',   cfg.mbim_device   || '/dev/cdc-wdm0');
     setVal('cfg-mbim-proxy',    cfg.mbim_proxy    || '0');
@@ -55,12 +55,13 @@ function onBackendChange() {
     var backend = getVal('cfg-apdu-backend');
 
     // Show/hide device rows based on backend
-    var qmiRows  = ['cfg-qmi-device-row'];
+    var qmiRows  = ['cfg-qmi-device-row', 'cfg-qmi-slot-row'];
     var mbimRows = ['cfg-mbim-device-row', 'cfg-mbim-proxy-row'];
+    var isQmi = (backend === 'qmi' || backend === 'uqmi');
 
     qmiRows.forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.style.display = (backend === 'qmi') ? '' : 'none';
+        if (el) el.style.display = isQmi ? '' : 'none';
     });
     mbimRows.forEach(function(id) {
         var el = document.getElementById(id);
@@ -78,7 +79,7 @@ function saveConfig() {
     var cfg = {
         apdu_backend:  getVal('cfg-apdu-backend'),
         qmi_device:    getVal('cfg-qmi-device'),
-        sim_slot:      getVal('cfg-sim-slot'),
+        qmi_sim_slot:  getVal('cfg-qmi-slot'),
         at_device:     getVal('cfg-at-device'),
         mbim_device:   getVal('cfg-mbim-device'),
         mbim_proxy:    getVal('cfg-mbim-proxy'),
@@ -87,12 +88,6 @@ function saveConfig() {
         http_debug:    getVal('cfg-http-debug'),
         at_debug:      getVal('cfg-at-debug')
     };
-
-    // Only send qmi_sim_slot if the field exists in the form
-    var qmiSlotEl = document.getElementById('cfg-qmi-slot');
-    if (qmiSlotEl && qmiSlotEl.value !== '') {
-        cfg.qmi_sim_slot = qmiSlotEl.value;
-    }
 
     apiPost('save_config', { config: JSON.stringify(cfg) })
         .then(function(data) {

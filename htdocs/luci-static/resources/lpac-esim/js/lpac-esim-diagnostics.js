@@ -1,4 +1,4 @@
-/* lpac-esim-diagnostics.js — v1.3.5 */
+/* lpac-esim-diagnostics.js — v1.3.6 */
 'use strict';
 
 function loadRunlog() {
@@ -216,4 +216,72 @@ function clearAtTerminal() {
     atHistory = [];
     var term = document.getElementById('at-terminal');
     if (term) term.textContent = 'Ready. Type an AT command or click Send.';
+}
+
+/* ===== Version / Build Info ===== */
+function escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function driverList(s) {
+    return String(s || '').split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+}
+
+function backendLooksSupported(backend, drivers) {
+    if (!backend) return true;
+    var d = driverList(drivers);
+    // qmi and uqmi are mutually exclusive between builds but both valid
+    if (backend === 'qmi')  return d.indexOf('qmi')  !== -1;
+    if (backend === 'uqmi') return d.indexOf('uqmi') !== -1;
+    if (backend === 'mbim') return d.indexOf('mbim') !== -1;
+    if (backend === 'at')   return d.indexOf('at')   !== -1;
+    return true;
+}
+
+function loadVersionInfo() {
+    var el = document.getElementById('diag-version-info');
+    if (!el) return;
+    el.innerHTML = 'Loading...';
+
+    apiGet('version')
+        .then(function(data) {
+            if (!data || !data.payload || data.payload.code !== 0) {
+                el.innerHTML = '<span style="color:#721c24">Failed to load version info.</span>';
+                return;
+            }
+            var d = data.payload.data;
+
+            var buildLabel = {
+                'official-dynamic':  '<span style="color:#856404;background:#fff3cd;padding:1px 6px;border-radius:3px">Official OpenWrt (dynamic drivers)</span>',
+                'custom-native-qmi': '<span style="color:#155724;background:#d4edda;padding:1px 6px;border-radius:3px">Custom build (native QMI / libqmi)</span>',
+                'unknown':           '<span style="color:#383d41;background:#e2e3e5;padding:1px 6px;border-radius:3px">Unknown build</span>'
+            }[d.lpac_build] || '<span>' + escapeHtml(d.lpac_build || '?') + '</span>';
+
+            // Warn only when current backend is NOT in the available driver list
+            var recWarning = '';
+            if (!backendLooksSupported(d.backend, d.available_drivers)) {
+                recWarning = '<br><span style="color:#856404">&#9888; Backend <b>' +
+                    escapeHtml(d.backend || '?') +
+                    '</b> may not be supported by this lpac build. Suggested: <b>' +
+                    escapeHtml(d.recommended_backend || '?') +
+                    '</b>. Check Config tab.</span>';
+            }
+
+            el.innerHTML =
+                '<table style="border-collapse:collapse;width:100%">' +
+                '<tr><td style="padding:3px 8px;color:#666;width:180px">lpac version</td><td style="padding:3px 8px"><b>' + escapeHtml(d.lpac_version || '?') + '</b></td></tr>' +
+                '<tr><td style="padding:3px 8px;color:#666">build type</td><td style="padding:3px 8px">' + buildLabel + recWarning + '</td></tr>' +
+                '<tr><td style="padding:3px 8px;color:#666">available drivers</td><td style="padding:3px 8px"><code>' + escapeHtml(d.available_drivers || '?') + '</code></td></tr>' +
+                '<tr><td style="padding:3px 8px;color:#666">active backend</td><td style="padding:3px 8px"><code>' + escapeHtml(d.backend || '?') + '</code> &nbsp; device: <code>' + escapeHtml(d.device || '?') + '</code></td></tr>' +
+                '<tr><td style="padding:3px 8px;color:#666">script version</td><td style="padding:3px 8px"><code>' + escapeHtml(d.script_version || '?') + '</code></td></tr>' +
+                '</table>';
+        })
+        .catch(function(e) {
+            el.innerHTML = '<span style="color:#721c24">Error: ' + escapeHtml(e.message || 'network') + '</span>';
+        });
 }
